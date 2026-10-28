@@ -1,0 +1,3356 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saúde Funcional - Indicadores de AVM e Desmame</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-subtle: #f1f5f9;
+      --border: #cbd5e1;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --primary-soft: #e0f2fe;
+      --success: #16a34a;
+      --success-soft: #dcfce7;
+      --warning: #d97706;
+      --warning-soft: #fef3c7;
+      --danger: #dc2626;
+      --danger-soft: #fee2e2;
+      --purple: #7c3aed;
+      --purple-soft: #ede9fe;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    [data-theme="dark"] {
+      --bg: #090d16;
+      --surface: #131c2e;
+      --surface-subtle: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --primary-soft: rgba(56, 189, 248, 0.15);
+      --success: #22c55e;
+      --success-soft: rgba(34, 197, 94, 0.15);
+      --warning: #f59e0b;
+      --warning-soft: rgba(245, 158, 11, 0.15);
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.15);
+      --purple: #a78bfa;
+      --purple-soft: rgba(167, 139, 250, 0.15);
+      --shadow: 0 2px 5px rgba(0,0,0,0.4);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; transition: background 0.2s, color 0.2s; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-badge {
+      background: var(--primary);
+      color: #fff;
+      font-weight: 700;
+      padding: 6px 10px;
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+    }
+    .brand-title h1 { font-size: 1.05rem; font-weight: 700; }
+    .brand-title p { font-size: 0.75rem; color: var(--text-muted); }
+
+    .header-btns { display: flex; gap: 8px; align-items: center; }
+
+    /* BARREIRA DE LOGIN TOTALMENTE OPACA */
+    .login-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #090d16;
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .login-box {
+      background: #131c2e;
+      border: 1px solid #334155;
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 400px;
+      padding: 28px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      color: #f8fafc;
+    }
+
+    /* DROPDOWN DE EXPORTAÇÃO */
+    .dropdown { position: relative; display: inline-block; }
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: 105%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+      min-width: 165px;
+      z-index: 100;
+      overflow: hidden;
+    }
+    .dropdown-content.show { display: block; }
+    .dropdown-item {
+      padding: 9px 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      width: 100%;
+      text-align: left;
+    }
+    .dropdown-item:hover { background: var(--surface-subtle); color: var(--primary); }
+
+    .btn {
+      padding: 7px 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: var(--surface-subtle); }
+    .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+    .btn-danger:hover { background: var(--danger); color: #fff; }
+
+    .main { max-width: 1400px; width: 100%; margin: 0 auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+
+    .tabs-nav {
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      padding: 8px 14px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.85rem;
+      border-radius: var(--radius);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .tab-btn.active { background: var(--primary-soft); color: var(--primary); }
+
+    .tab-pane { display: none; flex-direction: column; gap: 16px; }
+    .tab-pane.active { display: flex; }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .kpi-title { font-size: 0.72rem; text-transform: uppercase; font-weight: 700; color: var(--text-muted); letter-spacing: 0.03em; }
+    .kpi-num { font-size: 1.55rem; font-weight: 700; line-height: 1.1; }
+    .kpi-desc { font-size: 0.75rem; color: var(--text-muted); }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .card-title { font-size: 0.95rem; font-weight: 700; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .b-avm { background: var(--danger-soft); color: var(--danger); }
+    .b-desc { background: var(--warning-soft); color: var(--warning); }
+    .b-re { background: var(--success-soft); color: var(--success); }
+    .b-info { background: var(--primary-soft); color: var(--primary); }
+    .b-purple { background: var(--purple-soft); color: var(--purple); }
+
+    .table-box {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left; }
+    th { background: var(--surface-subtle); padding: 10px 12px; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface-subtle); }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 0.76rem; font-weight: 600; color: var(--text-muted); }
+    .form-ctrl {
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: var(--radius);
+      font-size: 0.82rem;
+      outline: none;
+    }
+    .form-ctrl:focus { border-color: var(--primary); }
+
+    .chips-box {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .chip {
+      padding: 5px 11px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s;
+    }
+    .chip:hover {
+      background: var(--surface-subtle);
+      color: var(--text);
+    }
+    .chip.selected {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+      gap: 16px;
+    }
+    .chart-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 330px;
+    }
+    .chart-box-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chart-box-title span.tag {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--surface-subtle);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .chart-container { position: relative; flex: 1; width: 100%; min-height: 260px; }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 580px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .timeline-box {
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .timeline-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+    }
+
+    footer {
+      margin-top: auto;
+      border-top: 1px solid var(--border);
+      padding: 14px 20px;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      background: var(--surface);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-badge" id="headerBrandSigla">HDH</div>
+      <div class="brand-title">
+        <h1>Saúde Funcional • Indicadores de AVM e Desmame</h1>
+        <p id="headerHospitalNome">Hospital Metropolitano Sul Dom Helder Câmara</p>
+      </div>
+    </div>
+    <div class="header-btns">
+      <div id="usuarioInfoBadge" style="display: none; align-items: center; gap: 8px; font-size: 0.78rem; font-weight: 600; padding: 4px 10px; background: var(--surface-subtle); border-radius: var(--radius); border: 1px solid var(--border);">
+        <span>👤 <span id="lblNomeUsuarioLogado">Admin</span></span>
+        <button class="btn btn-danger" style="padding: 2px 6px; font-size: 0.7rem;" onclick="realizarLogout()" title="Sair do Sistema">Sair</button>
+      </div>
+      <button class="btn" onclick="alternarTema()">
+        <span id="themeIcon">🌙</span> <span id="themeTxt">Escuro</span>
+      </button>
+      <button class="btn btn-danger" onclick="restaurarDados()" title="Restaurar dados das planilhas">
+        ↺ Restaurar
+      </button>
+      <div class="dropdown">
+        <button class="btn btn-primary" onclick="toggleDropdownExportar()">
+          📥 Exportar Dados ▾
+        </button>
+        <div class="dropdown-content" id="dropdownMenuExportar">
+          <button class="dropdown-item" onclick="exportarCSV()"><span style="color:#16a34a;">📄</span> Planilha CSV</button>
+          <button class="dropdown-item" onclick="exportarExcel()"><span style="color:#16a34a;">📊</span> Microsoft Excel (.xls)</button>
+          <button class="dropdown-item" onclick="exportarWord()"><span style="color:#0284c7;">📝</span> Relatório Word (.doc)</button>
+          <button class="dropdown-item" onclick="exportarPDF()"><span style="color:#dc2626;">📑</span> Documento PDF (.pdf)</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- BARREIRA DE ENTRADA: TELA DE LOGIN -->
+  <div class="login-overlay" id="telaLoginBarreira">
+    <div class="login-box">
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+        <div class="brand-badge" style="font-size: 1rem; padding: 8px 12px;">FGH</div>
+        <div>
+          <h2 style="font-size: 1.05rem; font-weight: 700; color: #fff;">Acesso Restrito • Indicadores de AVM e Desmame</h2>
+          <p style="font-size: 0.75rem; color: #94a3b8;">Saúde Funcional • Gestão de AVM e Desmame</p>
+        </div>
+      </div>
+      <form id="formLogin" onsubmit="realizarLogin(event)" style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="form-group">
+          <label style="color: #cbd5e1;">E-mail cadastrado *</label>
+          <input type="text" id="loginUsuario" class="form-ctrl" style="background:#090d16; color:#fff; border-color:#334155;" placeholder="Digite seu e-mail..." required autocomplete="username" type="email">
+        </div>
+        <div class="form-group">
+          <label style="color: #cbd5e1;">Senha *</label>
+          <input type="password" id="loginSenha" class="form-ctrl" style="background:#090d16; color:#fff; border-color:#334155;" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <div id="loginErroMsg" style="display: none; font-size: 0.75rem; color: var(--danger); background: var(--danger-soft); padding: 8px; border-radius: 4px;">
+          Usuário ou senha incorretos.
+        </div>
+        <button type="submit" class="btn btn-primary" style="justify-content: center; padding: 10px; margin-top: 4px;">
+          Entrar no Sistema
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="main">
+    <nav class="tabs-nav">
+      <button class="tab-btn active" onclick="irParaAba('censo')">📋 Ronda Diária e Censo</button>
+      <button class="tab-btn" onclick="irParaAba('dashboard')">📈 Dashboard e Gráficos Comparativos</button>
+      <button class="tab-btn" onclick="irParaAba('dados')">📊 Indicadores Estratificados</button>
+      <button class="tab-btn" onclick="irParaAba('admissao')">➕ Cadastrar Paciente / Leito</button>
+      <button class="tab-btn" onclick="irParaAba('historico')">📁 Todos os Registros</button>
+      <button class="tab-btn" onclick="irParaAba('importar')">📂 Importar Planilhas Anteriores</button>
+      <button class="tab-btn" onclick="irParaAba('usuarios')">👥 Usuários</button>
+      <button class="tab-btn" onclick="irParaAba('unidades')">🏥 Unidades / Setores</button>
+    </nav>
+
+    <!-- ABA 1: RONDA DIÁRIA E CENSO -->
+    <div id="aba-censo" class="tab-pane active">
+      <div class="card" style="border-top: 3px solid var(--primary);">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Censo Hospitalar Diário e Ronda Ventilatória</h2>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
+              Acompanhamento de leitos, desfechos e registro de ciclos múltiplos de extubação e reintubação.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted);">Data da Ronda:</label>
+            <input type="date" id="dataRonda" class="form-ctrl" onchange="aoMudarDataRonda()">
+          </div>
+        </div>
+
+        <!-- CENSO DO SETOR (PACIENTES INTERNADOS) -->
+        <div style="background: var(--surface-subtle); padding: 12px; border-radius: var(--radius); margin-bottom: 14px;">
+          <div style="font-size: 0.8rem; font-weight: 700; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <span>Pacientes Internados no Setor nesta Data (Denominador da Tx. Utilização AVM):</span>
+            <button class="btn btn-primary" style="padding: 3px 8px; font-size: 0.72rem;" onclick="salvarCensoInternados()">Salvar Censo</button>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px;" id="gridCensoInternados"></div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; gap: 8px; align-items: center; font-size: 0.78rem;">
+            <span>Apontamento do Dia:</span>
+            <span class="badge b-avm">AVM</span> Invasiva
+            <span class="badge b-desc">DESCONEXÃO</span> Tubo T / Desmame
+            <span class="badge b-re">RE</span> Espontânea
+          </div>
+          <button class="btn btn-primary" onclick="irParaAba('admissao')">➕ Admitir Novo Paciente</button>
+        </div>
+
+        <div class="table-box">
+          <table>
+            <thead>
+              <tr>
+                <th>Paciente / Leito</th>
+                <th>Setor</th>
+                <th>Data IOT</th>
+                <th>Dias AVM</th>
+                <th>Status no Dia</th>
+                <th>Apontar Status</th>
+                <th>Ciclos Extubação & RETOT</th>
+                <th>TQT / Decanul.</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tabelaCensoCorpo"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA 2: DASHBOARD -->
+    <div id="aba-dashboard" class="tab-pane">
+      <div class="card">
+        <div class="card-head" style="margin-bottom: 10px;">
+          <div>
+            <h2 class="card-title">Filtros de Período e Comparativo Multissetorial</h2>
+            <p style="font-size: 0.78rem; color: var(--text-muted);">
+              Clique nos setores para selecionar múltiplos e comparar lado a lado. Todos os gráficos exibem valores diretos sobre as barras e fatias.
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <label style="font-size: 0.74rem; font-weight: 600; color: var(--text-muted);">De:</label>
+              <input type="date" id="filtroDashInicio" class="form-ctrl" onchange="atualizarDashboard()">
+            </div>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <label style="font-size: 0.74rem; font-weight: 600; color: var(--text-muted);">Até:</label>
+              <input type="date" id="filtroDashFim" class="form-ctrl" onchange="atualizarDashboard()">
+            </div>
+            <button class="btn" onclick="resetarFiltrosDash()">Resetar Período</button>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--border);">
+          <span style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted);">Setores Selecionados para Comparativo:</span>
+          <div class="chips-box" id="chipsSetoresContainer"></div>
+          <button class="btn" style="padding: 4px 8px; font-size: 0.72rem;" onclick="selecionarTodosSetores(true)">Marcar Todos</button>
+          <button class="btn" style="padding: 4px 8px; font-size: 0.72rem;" onclick="selecionarTodosSetores(false)">Desmarcar</button>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card" style="border-left: 4px solid var(--danger);">
+          <div class="kpi-title">Taxa Utilização de AVM</div>
+          <div class="kpi-num" id="dashTaxaUtilizacao" style="color: var(--danger);">0.0%</div>
+          <div class="kpi-desc" id="dashUtilizacaoSub">0 AVM-dia / 0 Intern.-dia</div>
+        </div>
+        <div class="kpi-card" style="border-left: 4px solid var(--warning);">
+          <div class="kpi-title">Tx. Extubação Não Programada</div>
+          <div class="kpi-num" id="dashTaxaNaoProg" style="color: var(--warning);">0.0%</div>
+          <div class="kpi-desc" id="dashNaoProgSub">Autoextubação + Acidental</div>
+        </div>
+        <div class="kpi-card" style="border-left: 4px solid var(--purple);">
+          <div class="kpi-title">Total Extubações & RETOTs</div>
+          <div class="kpi-num" id="dashContagemExtRetot" style="color: var(--purple);">0 | 0</div>
+          <div class="kpi-desc" id="dashExtRetotSub">0 extubações / 0 RETOTs</div>
+        </div>
+        <div class="kpi-card" style="border-left: 4px solid var(--success);">
+          <div class="kpi-title">Taxa Sucesso Extubação</div>
+          <div class="kpi-num" id="dashTaxaSucesso" style="color: var(--success);">0.0%</div>
+          <div class="kpi-desc" id="dashSucessoSub">Sem reintubação &lt;48h</div>
+        </div>
+        <div class="kpi-card" style="border-left: 4px solid var(--danger);">
+          <div class="kpi-title">Taxa Falha Extubação</div>
+          <div class="kpi-num" id="dashTaxaFalha">0.0%</div>
+          <div class="kpi-desc" id="dashFalhaSub">Reintubações &lt;48h</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Total Pacientes-Dia AVM</div>
+          <div class="kpi-num" id="dashPacientesDia">0 d</div>
+          <div class="kpi-desc">Dias em VM invasiva</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Taxa de Traqueostomia</div>
+          <div class="kpi-num" id="dashTaxaTQT">0.0%</div>
+          <div class="kpi-desc" id="dashTQTSub">0 TQTs realizadas</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Mortalidade em AVM</div>
+          <div class="kpi-num" id="dashTaxaObito">0.0%</div>
+          <div class="kpi-desc" id="dashObitoSub">Óbitos no período</div>
+        </div>
+      </div>
+
+      <div class="charts-grid">
+        <div class="chart-box">
+          <div class="chart-box-title">
+            <span>1. Taxa de Utilização de AVM por Setor</span>
+            <span class="tag">AVM-dia / Pac-dia internados (%)</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="graficoUtilizacaoSetor"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-box">
+          <div class="chart-box-title">
+            <span>2. Taxa de Extubação Não Programada</span>
+            <span class="tag">(Autoextub. + Acidental) / Total Ext. (%)</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="graficoTaxaNaoProg"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-box">
+          <div class="chart-box-title">
+            <span>3. Distribuição de Tipos de Extubação</span>
+            <span class="tag">Programadas vs Auto vs Acidental (Qtd)</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="graficoComparativoTiposExt"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-box">
+          <div class="chart-box-title">
+            <span>4. Taxas de Sucesso e Falha de Extubação</span>
+            <span class="tag">Sucesso vs Falha &lt;48h (%)</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="graficoSucessoFalha"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-box">
+          <div class="chart-box-title">
+            <span>5. Pacientes-Dia em Ventilação Mecânica (AVM-Dia)</span>
+            <span class="tag">Soma total de dias invasivos</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="graficoPacientesDia"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-box">
+          <div class="chart-box-title">
+            <span>6. Taxas de Traqueostomia (TQT) e Mortalidade</span>
+            <span class="tag">Incidência relativa (%)</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="graficoTQTObito"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-box">
+          <div class="chart-box-title">
+            <span>7. Evolução Diária: Em AVM vs Total Internados</span>
+            <span class="tag">Tendência temporal consolidada</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="graficoEvolucaoAVM"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-box">
+          <div class="chart-box-title">
+            <span>8. Distribuição Geral de Desfechos dos Leitos</span>
+            <span class="tag">Total de pacientes selecionados</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="graficoDesfechos"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA 3: INDICADORES ESTRATIFICADOS -->
+    <div id="aba-dados" class="tab-pane">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Consolidação Estratificada dos Indicadores por Setor</h2>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
+              Tabela consolidada com somatórios acumulados de ciclos de extubação e taxas assistenciais.
+            </p>
+          </div>
+        </div>
+        <div class="table-box">
+          <table>
+            <thead>
+              <tr>
+                <th>Setor / Unidade</th>
+                <th>Pacientes</th>
+                <th>AVM-Dia</th>
+                <th>Internados-Dia</th>
+                <th>Tx. Utilização AVM</th>
+                <th>Total Extubações</th>
+                <th>Total RETOTs</th>
+                <th>Falhas (&lt;48h)</th>
+                <th>Tx. Sucesso</th>
+                <th>Autoextubação</th>
+                <th>Acidental</th>
+                <th>Tx. Não Prog.</th>
+                <th>TQT</th>
+                <th>Óbitos</th>
+              </tr>
+            </thead>
+            <tbody id="tabelaDadosSetores"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA 4: CADASTRO / ADMISSÃO DE LEITO -->
+    <div id="aba-admissao" class="tab-pane">
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title" id="formTitulo">Admitir Novo Paciente no Leito / AVM</h2>
+          <button class="btn" onclick="limparFormulario()">Limpar Formulário</button>
+        </div>
+        <form id="formPaciente" onsubmit="salvarPaciente(event)">
+          <input type="hidden" id="editIndex" value="-1">
+          <div class="form-grid">
+            <div class="form-group" style="grid-column: span 2;">
+              <label>Nome do Paciente e Leito *</label>
+              <input type="text" id="cadNome" class="form-ctrl" placeholder="Ex: HELENA MARIA DA SILVA L01" required>
+            </div>
+            <div class="form-group">
+              <label>Setor / Unidade *</label>
+              <select id="cadSetor" class="form-ctrl" required>
+                <option value="">Selecione...</option>
+                <option value="UTI GERAL">UTI GERAL</option>
+                <option value="CARDIO">CARDIO</option>
+                <option value="UTI CIR A">UTI CIR A</option>
+                <option value="UTI CIR B">UTI CIR B</option>
+                <option value="VERMELHA">SALA VERMELHA</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Registro / Prontuário</label>
+              <input type="text" id="cadRegistro" class="form-ctrl" placeholder="Ex: 1197515">
+            </div>
+            <div class="form-group">
+              <label>Idade (anos)</label>
+              <input type="number" id="cadIdade" class="form-ctrl" min="0" max="120" placeholder="Ex: 69">
+            </div>
+            <div class="form-group">
+              <label>Data Admissão no Setor</label>
+              <input type="date" id="cadDataAdm" class="form-ctrl">
+            </div>
+            <div class="form-group">
+              <label>Data da IOT (Intubação) *</label>
+              <input type="date" id="cadDataIOT" class="form-ctrl" required>
+            </div>
+            <div class="form-group">
+              <label>Data da Traqueostomia (TQT)</label>
+              <input type="date" id="cadDataTQT" class="form-ctrl">
+            </div>
+            <div class="form-group">
+              <label>Data da Decanulação</label>
+              <input type="date" id="cadDataDecanul" class="form-ctrl">
+            </div>
+            <div class="form-group">
+              <label>Situação do Leito / Desfecho *</label>
+              <select id="cadDesfecho" class="form-ctrl" required onchange="aoTrocarDesfecho()">
+                <option value="ATIVO">EM ACOMPANHAMENTO (Leito Ocupado)</option>
+                <option value="ALTA HOSPITALAR">ALTA HOSPITALAR (Leito Liberado)</option>
+                <option value="TRANSFERÊNCIA">TRANSFERÊNCIA (Leito Liberado)</option>
+                <option value="ÓBITO">ÓBITO (Leito Liberado)</option>
+                <option value="EXTOT SEM FALHA">EXTOT SEM FALHA (Alta da VM)</option>
+                <option value="DECANULADO SEM FALHA">DECANULADO SEM FALHA</option>
+              </select>
+            </div>
+            <div class="form-group" id="boxDataDesfecho" style="display: none;">
+              <label>Data do Desfecho Clínico</label>
+              <input type="date" id="cadDataDesfecho" class="form-ctrl">
+            </div>
+            <div class="form-group">
+              <label>Status Ventilatório Inicial</label>
+              <select id="cadStatusHoje" class="form-ctrl">
+                <option value="AVM">AVM - Ventilação Mecânica Invasiva</option>
+                <option value="DESCONEXÃO">DESCONEXÃO - Tubo T / Desmame</option>
+                <option value="RE">RE - Respiração Espontânea</option>
+              </select>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+            <button type="button" class="btn" onclick="limparFormulario()">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSalvar">Salvar no Leito</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ABA 5: HISTÓRICO GERAL -->
+    <div id="aba-historico" class="tab-pane">
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Banco Geral de Registros</h2>
+          <span id="txtContadorGeral" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+        </div>
+        <div style="display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+          <input type="text" id="filtroTexto" class="form-ctrl" style="flex: 2; min-width: 180px;" placeholder="Filtrar por nome ou prontuário..." oninput="renderizarTabelaGeral()">
+          <select id="filtroSetor" class="form-ctrl" style="flex: 1;" onchange="renderizarTabelaGeral()">
+            <option value="">Todos os Setores</option>
+            <option value="UTI GERAL">UTI GERAL</option>
+            <option value="CARDIO">CARDIO</option>
+            <option value="UTI CIR A">UTI CIR A</option>
+            <option value="UTI CIR B">UTI CIR B</option>
+            <option value="VERMELHA">SALA VERMELHA</option>
+          </select>
+          <select id="filtroStatusLeito" class="form-ctrl" style="flex: 1;" onchange="renderizarTabelaGeral()">
+            <option value="">Todos os Status</option>
+            <option value="ATIVO">Somente Leitos Ativos</option>
+            <option value="DESFECHADOS">Somente Desfechados (Liberados)</option>
+          </select>
+        </div>
+        <div class="table-box">
+          <table>
+            <thead>
+              <tr>
+                <th>Paciente / Leito</th>
+                <th>Setor</th>
+                <th>Prontuário</th>
+                <th>Data IOT</th>
+                <th>Dias AVM</th>
+                <th>Histórico de Ciclos Ext/RETOT</th>
+                <th>TQT / Decanul.</th>
+                <th>Desfecho</th>
+                <th>Data Desfecho</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tabelaGeralCorpo"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA: IMPORTAÇÃO DE PLANILHAS ANTERIORES -->
+    <div id="aba-importar" class="tab-pane">
+      <div class="card" style="border-top: 3px solid var(--primary);">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Importação de Planilhas Mensais Anteriores (Excel / CSV)</h2>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
+              Suba as planilhas históricas dos meses anteriores no modelo padrão de Fisioterapia/AVM. O sistema extrai automaticamente pacientes, tempos de ventilação, ciclos de extubação, RETOT, TQT e os apontamentos diários (1 a 31). A partir da importação, basta continuar com os censos diários na primeira aba.
+            </p>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; background: var(--surface-subtle); padding: 16px; border-radius: var(--radius); border: 1px solid var(--border);">
+          <div class="form-group">
+            <label>Selecione a Planilha (.xlsx, .xls ou .csv) *</label>
+            <input type="file" id="arquivoPlanilhaInput" class="form-ctrl" accept=".xlsx, .xls, .csv" onchange="aoSelecionarArquivoExcel(event)">
+          </div>
+          <div class="form-group">
+            <label>Mês de Referência da Planilha *</label>
+            <select id="importMesRef" class="form-ctrl">
+              <option value="01">01 - Janeiro</option>
+              <option value="02">02 - Fevereiro</option>
+              <option value="03">03 - Março</option>
+              <option value="04">04 - Abril</option>
+              <option value="05">05 - Maio</option>
+              <option value="06">06 - Junho</option>
+              <option value="07">07 - Julho</option>
+              <option value="08">08 - Agosto</option>
+              <option value="09">09 - Setembro</option>
+              <option value="10" selected>10 - Outubro</option>
+              <option value="11">11 - Novembro</option>
+              <option value="12">12 - Dezembro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Ano de Referência *</label>
+            <input type="number" id="importAnoRef" class="form-ctrl" value="2026" min="2020" max="2035">
+          </div>
+          <div class="form-group">
+            <label>Modo de Importação</label>
+            <select id="importModoOperacao" class="form-ctrl">
+              <option value="mesclar">Mesclar com os dados atuais (adicionar/atualizar)</option>
+              <option value="substituir">Substituir todo o banco pelos dados desta planilha</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 8px;">
+          <div style="font-size: 0.78rem; color: var(--text-muted);" id="importStatusArquivo">Nenhum arquivo carregado ainda.</div>
+          <button class="btn btn-primary" id="btnConfirmarImportacao" style="display: none;" onclick="confirmarImportacaoPlanilha()">
+            📥 Confirmar e Integrar ao Banco de Dados
+          </button>
+        </div>
+
+        <div id="boxPreviaImportacao" style="display: none; margin-top: 16px;">
+          <h3 style="font-size: 0.85rem; font-weight: 700; margin-bottom: 8px;">Prévia dos Registros Identificados (<span id="contPreviaImport">0</span> pacientes):</h3>
+          <div class="table-box" style="max-height: 380px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome do Paciente / Leito</th>
+                  <th>Setor</th>
+                  <th>Prontuário</th>
+                  <th>Data IOT</th>
+                  <th>Dias AVM</th>
+                  <th>Extubação / Ciclos</th>
+                  <th>TQT</th>
+                  <th>Desfecho</th>
+                  <th>Dias Apontados</th>
+                </tr>
+              </thead>
+              <tbody id="tabelaPreviaImportCorpo"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA 6: CADASTRO E GESTÃO DE USUÁRIOS -->
+    <div id="aba-usuarios" class="tab-pane">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Cadastro e Controle de Usuários</h2>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
+              Gerenciamento de acessos de fisioterapeutas, coordenadores e equipe assistencial.
+            </p>
+          </div>
+        </div>
+        <form id="formUsuario" onsubmit="salvarUsuario(event)">
+          <input type="hidden" id="editUsuarioId" value="">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Nome Completo *</label>
+              <input type="text" id="cadUserNome" class="form-ctrl" placeholder="Ex: Dra. Shirley Bezerra" required>
+            </div>
+            <div class="form-group">
+              <label>Login / Matrícula *</label>
+              <input type="text" id="cadUserLogin" class="form-ctrl" placeholder="Ex: sbezerra" required>
+            </div>
+            <div class="form-group">
+              <label>Perfil de Acesso *</label>
+              <select id="cadUserPerfil" class="form-ctrl" required>
+                <option value="administrador">Administrador</option>
+                <option value="coordenacao">Coordenação</option>
+                <option value="fisioterapeuta_plantonista">Fisioterapeuta Plantonista</option>
+                <option value="fisioterapeuta_lider">Fisioterapeuta Líder</option>
+                <option value="convidado">Convidado</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Senha de Acesso *</label>
+              <input type="password" id="cadUserSenha" class="form-ctrl" placeholder="Digite a senha..." required>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px;">
+            <button type="button" class="btn" onclick="limparFormUsuario()">Limpar</button>
+            <button type="submit" class="btn btn-primary" id="btnSalvarUsuario">Cadastrar Usuário</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Usuários Cadastrados</h2>
+        </div>
+        <div class="table-box">
+          <table>
+            <thead>
+              <tr>
+                <th>Nome Completo</th>
+                <th>Login</th>
+                <th>Perfil</th>
+                <th>Status</th>
+                <th>Data Cadastro</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tabelaUsuariosCorpo"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA 7: CADASTRO E GESTÃO DE UNIDADES / SETORES -->
+    <div id="aba-unidades" class="tab-pane">
+      <div class="card" style="border-top: 3px solid var(--primary);">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Identidade da Unidade Hospitalar</h2>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
+              Configure a sigla e o nome do hospital para ajustar automaticamente o cabeçalho, rodapé e as exportações do sistema.
+            </p>
+          </div>
+        </div>
+        <form onsubmit="salvarIdentidadeHospital(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Sigla da Unidade / Hospital *</label>
+              <input type="text" id="cfgHospitalSigla" class="form-ctrl" value="HDH" placeholder="Ex: HDH, HMA, HR..." required>
+            </div>
+            <div class="form-group" style="grid-column: span 2;">
+              <label>Nome Completo do Hospital / Unidade *</label>
+              <input type="text" id="cfgHospitalNome" class="form-ctrl" value="Hospital Metropolitano Sul Dom Helder Câmara" placeholder="Ex: Hospital Metropolitano Sul Dom Helder Câmara" required>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+            <button type="submit" class="btn btn-primary">Salvar Identidade do Hospital</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2 class="card-title">Cadastro e Gestão de Setores / Leitos</h2>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
+              Configuração de capacidade instalada de leitos para cálculo automatizado de taxas assistenciais.
+            </p>
+          </div>
+        </div>
+        <form id="formUnidade" onsubmit="salvarUnidade(event)">
+          <input type="hidden" id="editUnidadeNomeAntigo" value="">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Nome do Setor / Unidade *</label>
+              <input type="text" id="cadUnidadeNome" class="form-ctrl" placeholder="Ex: UTI CORONARIANA" required>
+            </div>
+            <div class="form-group">
+              <label>Capacidade Total de Leitos *</label>
+              <input type="number" id="cadUnidadeCapacidade" class="form-ctrl" min="1" max="100" placeholder="Ex: 10" required>
+            </div>
+            <div class="form-group">
+              <label>Tipo de Unidade *</label>
+              <select id="cadUnidadeTipo" class="form-ctrl" required>
+                <option value="UTI Adulto">UTI Adulto</option>
+                <option value="UTI Coronariana">UTI Coronariana / Cardio</option>
+                <option value="UTI Cirúrgica">UTI Cirúrgica</option>
+                <option value="Emergência / Sala Vermelha">Emergência / Sala Vermelha</option>
+                <option value="Enfermaria / UCI">Enfermaria / UCI</option>
+              </select>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px;">
+            <button type="button" class="btn" onclick="limparFormUnidade()">Limpar</button>
+            <button type="submit" class="btn btn-primary" id="btnSalvarUnidade">Cadastrar Unidade</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 class="card-title">Unidades Hospitalares Ativas</h2>
+        </div>
+        <div class="table-box">
+          <table>
+            <thead>
+              <tr>
+                <th>Unidade / Setor</th>
+                <th>Capacidade (Leitos)</th>
+                <th>Tipo de Setor</th>
+                <th>Pacientes Ativos no Momento</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tabelaUnidadesCorpo"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE CICLOS DE EXTUBACAO E RETOT -->
+  <div class="modal-overlay" id="modalCiclosExtubacao">
+    <div class="modal-box">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+          <h3 style="font-size: 1rem; font-weight: 700;">Ciclos de Extubação e Reintubação (RETOT)</h3>
+          <p id="modalCiclosPacienteNome" style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;"></p>
+        </div>
+        <button class="btn" onclick="fecharModalCiclos()" style="padding: 2px 8px;">✕</button>
+      </div>
+
+      <input type="hidden" id="modalCiclosPacienteIndex" value="-1">
+
+      <div>
+        <label style="font-size: 0.76rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Ciclos Registrados:</label>
+        <div class="timeline-box" id="listaCiclosTimeline" style="margin-top: 6px;"></div>
+      </div>
+
+      <div style="border-top: 1px dashed var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 10px;">
+        <span style="font-size: 0.82rem; font-weight: 700; color: var(--primary);">➕ Lançar Novo Registro de Extubação / Reintubação:</span>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Data da Extubação *</label>
+            <input type="date" id="novoCicloDataExt" class="form-ctrl">
+          </div>
+          <div class="form-group">
+            <label>Tipo de Extubação *</label>
+            <select id="novoCicloTipoExt" class="form-ctrl">
+              <option value="PROGRAMADA">Programada (Planejada)</option>
+              <option value="AUTOEXTUBACAO">Não Programada: Autoextubação</option>
+              <option value="ACIDENTAL">Não Programada: Acidental</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Houve Reintubação (RETOT)?</label>
+            <select id="novoCicloTeveRetot" class="form-ctrl" onchange="aoMudarNovoCicloRetot()">
+              <option value="NAO">Não (Sucesso / Em observação)</option>
+              <option value="SIM">Sim (Reintubado)</option>
+            </select>
+          </div>
+          <div class="form-group" id="boxNovoCicloDataRetot" style="display: none;">
+            <label>Data da RETOT *</label>
+            <input type="date" id="novoCicloDataRetot" class="form-ctrl">
+          </div>
+          <div class="form-group" id="boxNovoCicloFalha" style="display: none;">
+            <label>Falha &lt; 48 horas?</label>
+            <select id="novoCicloFalha48h" class="form-ctrl">
+              <option value="SIM">Sim (Falha de Extubação &lt; 48h)</option>
+              <option value="NAO">Não (Reintubação tardia &gt; 48h)</option>
+            </select>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button class="btn btn-primary" onclick="adicionarCicloExtubacao()">Salvar este Ciclo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE TQT E DECANULACAO -->
+  <div class="modal-overlay" id="modalTQTDecanul">
+    <div class="modal-box" style="max-width: 400px;">
+      <h3 style="font-size: 1rem; font-weight: 700;" id="modalTQTTitulo">Traqueostomia / Decanulação</h3>
+      <p id="modalTQTPacienteNome" style="font-size: 0.82rem; color: var(--text-muted);"></p>
+      <input type="hidden" id="modalTQTPacienteIndex" value="-1">
+      <input type="hidden" id="modalTQTTipoAcao" value="">
+
+      <div class="form-group">
+        <label id="lblModalTQTData">Data do Procedimento *</label>
+        <input type="date" id="modalTQTData" class="form-ctrl">
+      </div>
+
+      <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;">
+        <button class="btn" onclick="fecharModalTQT()">Cancelar</button>
+        <button class="btn btn-primary" onclick="salvarTQTDecanul()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE DESFECHO -->
+  <div class="modal-overlay" id="modalDesfecho">
+    <div class="modal-box" style="max-width: 440px;">
+      <h3 style="font-size: 1rem; font-weight: 700;">Registrar Desfecho e Liberar Leito</h3>
+      <p id="modalPacienteNome" style="font-size: 0.82rem; color: var(--text-muted);"></p>
+      <input type="hidden" id="modalPacienteIndex" value="-1">
+
+      <div class="form-group">
+        <label>Tipo de Desfecho *</label>
+        <select id="modalTipoDesfecho" class="form-ctrl">
+          <option value="ALTA HOSPITALAR">ALTA HOSPITALAR</option>
+          <option value="TRANSFERÊNCIA">TRANSFERÊNCIA</option>
+          <option value="ÓBITO">ÓBITO</option>
+          <option value="EXTOT SEM FALHA">EXTOT SEM FALHA (Alta da VM)</option>
+          <option value="DECANULADO SEM FALHA">DECANULADO SEM FALHA</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Data do Desfecho *</label>
+        <input type="date" id="modalDataDesfecho" class="form-ctrl">
+      </div>
+
+      <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;">
+        <button class="btn" onclick="fecharModalDesfecho()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmarDesfecho()">Confirmar e Liberar Leito</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span id="footerHospitalNome">Hospital Metropolitano Sul Dom Helder Câmara</span> • Coordenação de Saúde Funcional / Fisioterapia
+  </footer>
+
+  <script>
+    // Conexão do NOVO site de Indicadores de AVM e Desmame com o Supabase.
+    // A publishable key pode estar no frontend; nunca coloque service_role/secret aqui.
+    const SUPABASE_URL = 'https://osgvhdgnnoxnvtyccwtu.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9_DuTxxCw2PQNVPhHJi6hw_ZesUJbBI';
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+    if (window.ChartDataLabels) {
+      Chart.register(ChartDataLabels);
+    }
+
+    let SETORES_ATIVOS = ["UTI GERAL", "CARDIO", "UTI CIR A", "UTI CIR B", "VERMELHA"];
+    let CAPACIDADE_SETORES = {
+      "UTI GERAL": 10,
+      "CARDIO": 10,
+      "UTI CIR A": 10,
+      "UTI CIR B": 16,
+      "VERMELHA": 12
+    };
+    let TIPOS_SETORES = {
+      "UTI GERAL": "UTI Adulto",
+      "CARDIO": "UTI Coronariana",
+      "UTI CIR A": "UTI Cirúrgica",
+      "UTI CIR B": "UTI Cirúrgica",
+      "VERMELHA": "Emergência / Sala Vermelha"
+    };
+
+    const USUARIOS_PADRAO = []; // Usuários reais são gerenciados pelo Supabase Auth.
+
+    let hospitalConfig = {
+      sigla: "HDH",
+      nome: "Hospital Metropolitano Sul Dom Helder Câmara"
+    };
+    let usuarios = [];
+    let usuarioLogado = null;
+    let setoresSelecionadosDash = [...SETORES_ATIVOS];
+
+    function aplicarIdentidadeHospital() {
+      const siglaEl = document.getElementById('headerBrandSigla');
+      const nomeEl = document.getElementById('headerHospitalNome');
+      const footEl = document.getElementById('footerHospitalNome');
+      const inpSigla = document.getElementById('cfgHospitalSigla');
+      const inpNome = document.getElementById('cfgHospitalNome');
+
+      if (siglaEl) siglaEl.textContent = hospitalConfig.sigla || 'HDH';
+      if (nomeEl) nomeEl.textContent = hospitalConfig.nome || 'Hospital Metropolitano Sul Dom Helder Câmara';
+      if (footEl) footEl.textContent = hospitalConfig.nome || 'Hospital Metropolitano Sul Dom Helder Câmara';
+      if (inpSigla) inpSigla.value = hospitalConfig.sigla || 'HDH';
+      if (inpNome) inpNome.value = hospitalConfig.nome || 'Hospital Metropolitano Sul Dom Helder Câmara';
+    }
+
+    function salvarIdentidadeHospital(e) {
+      if (e) e.preventDefault();
+      const sigla = document.getElementById('cfgHospitalSigla').value.trim().toUpperCase() || 'HDH';
+      const nome = document.getElementById('cfgHospitalNome').value.trim() || 'Hospital Metropolitano Sul Dom Helder Câmara';
+
+      hospitalConfig = { sigla, nome };
+      try {
+        localStorage.setItem('gestor_fgh_hospital_cfg', JSON.stringify(hospitalConfig));
+      } catch (err) {}
+
+      aplicarIdentidadeHospital();
+      alert(`Identidade atualizada para ${sigla} - ${nome}! O cabeçalho e todos os relatórios foram ajustados.`);
+    }
+
+    const DADOS_PLANILHAS = []; // Nunca incluir dados reais de pacientes no HTML público.
+
+    let pacientes = [];
+    let censoInternados = {};
+    let chartInst = {};
+
+    async function carregarDados() {
+      // Só inicia a aplicação após validar a sessão no Supabase Auth.
+      const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+      if (sessionError) console.error(sessionError);
+      if (!session) {
+        usuarioLogado = null;
+        aplicarEstadoAutenticacao();
+        return;
+      }
+      await concluirLogin(session.user);
+    }
+
+    async function concluirLogin(authUser) {
+      const { data: perfil, error } = await supabaseClient
+        .from('perfis_usuarios')
+        .select('id,nome,perfil,ativo,unidade_id')
+        .eq('id', authUser.id)
+        .maybeSingle();
+      if (error || !perfil || !perfil.ativo) {
+        await supabaseClient.auth.signOut();
+        usuarioLogado = null;
+        aplicarEstadoAutenticacao();
+        const errBox = document.getElementById('loginErroMsg');
+        errBox.textContent = 'Usuário sem perfil ativo cadastrado. Solicite ao administrador a liberação do acesso.';
+        errBox.style.display = 'block';
+        return;
+      }
+      usuarioLogado = {
+        id: perfil.id,
+        nome: perfil.nome || authUser.email || 'Usuário',
+        email: authUser.email,
+        perfil: perfil.perfil,
+        unidade_id: perfil.unidade_id,
+        status: 'Ativo'
+      };
+      aplicarEstadoAutenticacao();
+      aplicarPermissoesPerfil();
+      await carregarDadosRemotos();
+      atualizarSelectsDeSetores();
+      renderizarChipsSetores();
+      renderizarTudo();
+      renderizarTabelaUsuarios();
+      renderizarTabelaUnidades();
+    }
+
+    async function carregarDadosRemotos() {
+      // A coluna dados armazena o objeto usado pelo dashboard; a migração SQL anexa essa coluna.
+      const { data, error } = await supabaseClient.from('pacientes').select('app_id,dados');
+      if (error) {
+        console.error('Falha ao carregar pacientes:', error);
+        pacientes = [];
+        alert('Não foi possível carregar os dados do Supabase. Confira se executou o SQL de atualização fornecido junto com este HTML.');
+      } else {
+        pacientes = (data || []).map(row => ({ ...(row.dados || {}), id: row.app_id }));
+      }
+      pacientes.forEach(p => { if (!p.ciclos) p.ciclos = []; });
+      // As rondas também ficam no banco, em vez de dados de pacientes fixos no HTML.
+      const { data: rondas, error: erroRondas } = await supabaseClient.from('censo_rondas').select('data_ronda,dados');
+      if (!erroRondas) {
+        censoInternados = {};
+        (rondas || []).forEach(r => { censoInternados[r.data_ronda] = r.dados || {}; });
+      }
+    }
+
+    function aplicarPermissoesPerfil() {
+      const perfil = usuarioLogado?.perfil;
+      const admin = perfil === 'administrador';
+      const coord = perfil === 'coordenacao';
+      const plantonista = perfil === 'fisioterapeuta_plantonista';
+      const lider = perfil === 'fisioterapeuta_lider';
+      const convidado = perfil === 'convidado';
+      const permitidasConvidado = new Set(['dashboard', 'dados']);
+      document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn => {
+        const m = btn.getAttribute('onclick')?.match(/irParaAba\('([^']+)'\)/);
+        const aba = m?.[1];
+        btn.style.display = convidado ? (permitidasConvidado.has(aba) ? '' : 'none') : '';
+      });
+      const tabImport = Array.from(document.querySelectorAll('.tabs-nav .tab-btn')).find(b => (b.getAttribute('onclick') || '').includes("'importar'"));
+      if (tabImport) tabImport.style.display = (admin || coord || lider) ? '' : 'none';
+      const tabUsers = Array.from(document.querySelectorAll('.tabs-nav .tab-btn')).find(b => (b.getAttribute('onclick') || '').includes("'usuarios'"));
+      if (tabUsers) tabUsers.style.display = admin ? '' : 'none';
+      const tabUnits = Array.from(document.querySelectorAll('.tabs-nav .tab-btn')).find(b => (b.getAttribute('onclick') || '').includes("'unidades'"));
+      if (tabUnits) tabUnits.style.display = admin ? '' : 'none';
+      const tabAdm = Array.from(document.querySelectorAll('.tabs-nav .tab-btn')).find(b => (b.getAttribute('onclick') || '').includes("'admissao'"));
+      if (tabAdm) tabAdm.style.display = convidado ? 'none' : '';
+      const tabCenso = Array.from(document.querySelectorAll('.tabs-nav .tab-btn')).find(b => (b.getAttribute('onclick') || '').includes("'censo'"));
+      if (tabCenso) tabCenso.style.display = convidado ? 'none' : '';
+      // O perfil de plantão não importa arquivos; coordenação/líder podem importar.
+      const importPane = document.getElementById('aba-importar');
+      if (importPane) importPane.dataset.restricted = (!admin && !coord && !lider) ? 'true' : 'false';
+      const userPane = document.getElementById('aba-usuarios');
+      if (userPane) userPane.dataset.restricted = admin ? 'false' : 'true';
+      const unitsPane = document.getElementById('aba-unidades');
+      if (unitsPane) unitsPane.dataset.restricted = admin ? 'false' : 'true';
+      const restoreBtn = document.querySelector('button[onclick="restaurarDados()"]');
+      if (restoreBtn) restoreBtn.style.display = admin ? '' : 'none';
+      // Convidado não recebe registros identificáveis. Até o RPC de agregação ser configurado,
+      // mantemos as abas autorizadas visíveis, mas sem buscar pacientes diretamente.
+      if (convidado) {
+        pacientes = [];
+        const msg = 'Acesso de convidado: os indicadores agregados serão habilitados após configurar a consulta segura de dados anonimizados no Supabase.';
+        ['aba-dashboard','aba-dados'].forEach(id => {
+          const pane = document.getElementById(id);
+          if (pane && !pane.querySelector('.avm-guest-notice')) {
+            const notice = document.createElement('div'); notice.className='card avm-guest-notice';
+            notice.textContent=msg; pane.prepend(notice);
+          }
+        });
+      }
+    }
+
+    async function realizarLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('loginUsuario').value.trim();
+      const senha = document.getElementById('loginSenha').value;
+      const errBox = document.getElementById('loginErroMsg');
+      errBox.style.display = 'none';
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: senha });
+      if (error || !data.user) {
+        errBox.textContent = 'E-mail ou senha incorretos.';
+        errBox.style.display = 'block';
+        return;
+      }
+      await concluirLogin(data.user);
+    }
+
+    function aplicarEstadoAutenticacao() {
+      if (usuarioLogado) {
+        document.getElementById('telaLoginBarreira').style.display = 'none';
+        document.getElementById('usuarioInfoBadge').style.display = 'inline-flex';
+        document.getElementById('lblNomeUsuarioLogado').textContent = `${usuarioLogado.nome.split(' ')[0]} (${usuarioLogado.perfil})`;
+      } else {
+        document.getElementById('telaLoginBarreira').style.display = 'flex';
+        document.getElementById('usuarioInfoBadge').style.display = 'none';
+      }
+    }
+
+    async function realizarLogout() {
+      if (confirm('Deseja realmente sair do sistema?')) {
+        await supabaseClient.auth.signOut();
+        usuarioLogado = null;
+        pacientes = [];
+        document.getElementById('formLogin').reset();
+        document.getElementById('loginErroMsg').style.display = 'none';
+        aplicarEstadoAutenticacao();
+      }
+    }
+
+    function salvarUsuariosStorage() { /* Cadastro de usuários via frontend será habilitado por função administrativa segura. */ }
+
+    function salvarUnidadesStorage() {
+      try {
+        localStorage.setItem('gestor_hdh_unidades_v1', JSON.stringify({
+          setores: SETORES_ATIVOS,
+          capacidade: CAPACIDADE_SETORES,
+          tipos: TIPOS_SETORES
+        }));
+      } catch (e) {}
+    }
+
+    async function salvarStorage() {
+      if (!usuarioLogado || usuarioLogado.perfil === 'convidado') return;
+      try {
+        const rows = pacientes.map(p => ({
+          app_id: String(p.id),
+          identificador: String(p.id),
+          nome: p.nome || null,
+          registro: p.registro || null,
+          setor: p.setor || null,
+          data_admissao: p.dataAdm || null,
+          data_iot: p.dataIOT || null,
+          data_tqt: p.dataTQT || null,
+          data_decanulacao: p.dataDecanul || null,
+          desfecho: p.desfecho || null,
+          data_desfecho: p.dataDesfecho || null,
+          status_atual: p.statusHoje || null,
+          dados: p
+        }));
+        if (rows.length) {
+          const { error } = await supabaseClient.from('pacientes').upsert(rows, { onConflict: 'app_id' });
+          if (error) throw error;
+        }
+      } catch (err) {
+        console.error('Erro ao salvar pacientes no Supabase:', err);
+        alert('Não foi possível salvar os dados no banco. Confira as políticas RLS e a migração SQL.');
+      }
+    }
+
+    async function salvarCensoStorage() {
+      if (!usuarioLogado || usuarioLogado.perfil === 'convidado') return;
+      try {
+        const rows = Object.entries(censoInternados).map(([data_ronda, dados]) => ({ data_ronda, dados }));
+        if (rows.length) {
+          const { error } = await supabaseClient.from('censo_rondas').upsert(rows, { onConflict: 'data_ronda' });
+          if (error) throw error;
+        }
+      } catch (err) {
+        console.error('Erro ao salvar censo no Supabase:', err);
+        alert('Não foi possível salvar a ronda no banco. Confira a migração SQL e as políticas RLS.');
+      }
+    }
+
+    function restaurarDados() {
+      alert('A restauração de dados de demonstração foi desativada para evitar inserir dados de pacientes fixos ou fictícios no sistema.');
+    }
+
+    function irParaAba(nome) {
+      if (usuarioLogado?.perfil === 'convidado' && !['dashboard','dados'].includes(nome)) { alert('Seu perfil tem acesso somente ao Dashboard e aos Indicadores Estratificados.'); return; }
+      if (['usuarios','unidades'].includes(nome) && usuarioLogado?.perfil !== 'administrador') { alert('Acesso restrito ao Administrador.'); return; }
+      if (nome === 'importar' && !['administrador','coordenacao','fisioterapeuta_lider'].includes(usuarioLogado?.perfil)) { alert('Seu perfil não tem permissão para importar planilhas.'); return; }
+      document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById('aba-' + nome).classList.add('active');
+      if (event && event.currentTarget) event.currentTarget.classList.add('active');
+
+      if (nome === 'censo') renderizarCenso();
+      if (nome === 'dashboard') atualizarDashboard();
+      if (nome === 'dados') calcularAbaDados();
+      if (nome === 'historico') renderizarTabelaGeral();
+      if (nome === 'importar') { /* aba pronta */ }
+      if (nome === 'usuarios') renderizarTabelaUsuarios();
+      if (nome === 'unidades') renderizarTabelaUnidades();
+    }
+
+    function toggleDropdownExportar() {
+      const el = document.getElementById('dropdownMenuExportar');
+      el.classList.toggle('show');
+    }
+
+    window.addEventListener('click', (e) => {
+      if (!e.target.closest('.dropdown')) {
+        const el = document.getElementById('dropdownMenuExportar');
+        if (el && el.classList.contains('show')) el.classList.remove('show');
+      }
+    });
+
+    function atualizarSelectsDeSetores() {
+      const selCad = document.getElementById('cadSetor');
+      const selFiltro = document.getElementById('filtroSetor');
+
+      const vCad = selCad.value;
+      const vFiltro = selFiltro.value;
+
+      selCad.innerHTML = '<option value="">Selecione...</option>';
+      selFiltro.innerHTML = '<option value="">Todos os Setores</option>';
+
+      SETORES_ATIVOS.forEach(set => {
+        selCad.innerHTML += `<option value="${set}">${set}</option>`;
+        selFiltro.innerHTML += `<option value="${set}">${set}</option>`;
+      });
+
+      if (vCad && SETORES_ATIVOS.includes(vCad)) selCad.value = vCad;
+      if (vFiltro && SETORES_ATIVOS.includes(vFiltro)) selFiltro.value = vFiltro;
+    }
+
+    function alternarTema() {
+      const dark = document.body.getAttribute('data-theme') === 'dark';
+      document.body.setAttribute('data-theme', dark ? 'light' : 'dark');
+      document.getElementById('themeIcon').textContent = dark ? '🌙' : '☀️';
+      document.getElementById('themeTxt').textContent = dark ? 'Escuro' : 'Claro';
+      if (document.getElementById('aba-dashboard').classList.contains('active')) {
+        atualizarDashboard();
+      }
+    }
+
+    function aoMudarDataRonda() {
+      renderizarCenso();
+    }
+
+    function renderizarChipsSetores() {
+      const container = document.getElementById('chipsSetoresContainer');
+      container.innerHTML = '';
+      SETORES_ATIVOS.forEach(set => {
+        const isSel = setoresSelecionadosDash.includes(set);
+        container.innerHTML += `
+          <div class="chip ${isSel ? 'selected' : ''}" onclick="toggleChipSetor('${set}')">
+            ${isSel ? '✓ ' : ''}${set}
+          </div>
+        `;
+      });
+    }
+
+    function toggleChipSetor(set) {
+      if (setoresSelecionadosDash.includes(set)) {
+        if (setoresSelecionadosDash.length > 1) {
+          setoresSelecionadosDash = setoresSelecionadosDash.filter(s => s !== set);
+        } else {
+          alert("Pelo menos um setor deve permanecer selecionado.");
+          return;
+        }
+      } else {
+        setoresSelecionadosDash.push(set);
+      }
+      renderizarChipsSetores();
+      atualizarDashboard();
+    }
+
+    function selecionarTodosSetores(todos) {
+      if (todos) {
+        setoresSelecionadosDash = [...SETORES_ATIVOS];
+      } else {
+        setoresSelecionadosDash = [SETORES_ATIVOS[0]];
+      }
+      renderizarChipsSetores();
+      atualizarDashboard();
+    }
+
+    function renderizarCamposCensoInternados() {
+      const dt = document.getElementById('dataRonda').value || '2026-10-27';
+      const container = document.getElementById('gridCensoInternados');
+      container.innerHTML = '';
+
+      if (!censoInternados[dt]) {
+        censoInternados[dt] = { ...CAPACIDADE_SETORES };
+      }
+
+      SETORES_ATIVOS.forEach(set => {
+        const val = censoInternados[dt][set] !== undefined ? censoInternados[dt][set] : (CAPACIDADE_SETORES[set] || 10);
+        container.innerHTML += `
+          <div style="background: var(--surface); padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 0.68rem; font-weight: 700; color: var(--text-muted);">${set}</span>
+            <input type="number" min="0" max="60" id="censo_inp_${set.replace(/\s+/g, '_')}" class="form-ctrl" style="padding: 4px; font-weight: 700; text-align: center;" value="${val}">
+          </div>
+        `;
+      });
+    }
+
+    function salvarCensoInternados() {
+      const dt = document.getElementById('dataRonda').value || '2026-10-27';
+      if (!censoInternados[dt]) censoInternados[dt] = {};
+
+      SETORES_ATIVOS.forEach(set => {
+        const inp = document.getElementById(`censo_inp_${set.replace(/\s+/g, '_')}`);
+        if (inp) {
+          censoInternados[dt][set] = parseInt(inp.value, 10) || 0;
+        }
+      });
+
+      salvarCensoStorage();
+      alert(`Censo de pacientes internados salvo para a data ${formatarData(dt)}!`);
+      atualizarDashboard();
+      calcularAbaDados();
+    }
+
+    function renderizarCenso() {
+      renderizarCamposCensoInternados();
+      const tbody = document.getElementById('tabelaCensoCorpo');
+      tbody.innerHTML = '';
+      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+
+      const ativos = pacientes.filter(p => p.desfecho === 'ATIVO');
+
+      if (ativos.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">
+              Todos os leitos estão liberados. Cadastre uma nova admissão na aba "+ Cadastrar Paciente".
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      ativos.forEach(p => {
+        const realIdx = pacientes.indexOf(p);
+        const statusNaData = (p.historico && p.historico[dataRonda]) ? p.historico[dataRonda] : (p.statusHoje || 'AVM');
+        const badgeClass = statusNaData === 'AVM' ? 'b-avm' : (statusNaData === 'RE' ? 'b-re' : 'b-desc');
+
+        let diasAVM = p.tempoAVM || 0;
+        if (p.historico) {
+          const arr = Object.values(p.historico);
+          const cAVM = arr.filter(s => s === 'AVM').length;
+          if (cAVM > 0) diasAVM = Math.max(diasAVM, cAVM);
+        }
+
+        const qtdExt = p.ciclos ? p.ciclos.length : 0;
+        const qtdRetot = p.ciclos ? p.ciclos.filter(c => c.teveRetot).length : 0;
+
+        let badgeCiclos = `<span class="badge" style="background:var(--surface-subtle);color:var(--text-muted);">Sem extubação</span>`;
+        if (qtdExt > 0) {
+          badgeCiclos = `
+            <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">
+              <span class="badge b-re">${qtdExt}ª Extub.</span>
+              ${qtdRetot > 0 ? `<span class="badge b-avm">${qtdRetot} RETOT(s)</span>` : '<span class="badge b-re">Sem RETOT</span>'}
+            </div>
+          `;
+        }
+
+        let tagsTQT = [];
+        if (p.dataTQT) tagsTQT.push(`<span class="badge b-purple" title="TQT em ${formatarData(p.dataTQT)}">TQT</span>`);
+        if (p.dataDecanul) tagsTQT.push(`<span class="badge b-info" title="Decanulado em ${formatarData(p.dataDecanul)}">Decanul.</span>`);
+
+        tbody.innerHTML += `
+          <tr>
+            <td>
+              <strong>${p.nome}</strong>
+              <div style="font-size: 0.72rem; color: var(--text-muted);">Pront: ${p.registro || 'S/N'}</div>
+            </td>
+            <td><span class="badge b-info">${p.setor}</span></td>
+            <td>${formatarData(p.dataIOT)}</td>
+            <td><strong style="color: var(--danger);">${diasAVM} d</strong></td>
+            <td><span class="badge ${badgeClass}">${statusNaData}</span></td>
+            <td>
+              <div style="display: flex; gap: 4px;">
+                <button class="btn" style="padding: 3px 6px; font-size: 0.72rem; ${statusNaData==='AVM'?'background:var(--danger);color:#fff;border-color:transparent;':''}" onclick="apontarStatus(${realIdx}, 'AVM')">AVM</button>
+                <button class="btn" style="padding: 3px 6px; font-size: 0.72rem; ${statusNaData==='DESCONEXÃO'?'background:var(--warning);color:#fff;border-color:transparent;':''}" onclick="apontarStatus(${realIdx}, 'DESCONEXÃO')">Desc.</button>
+                <button class="btn" style="padding: 3px 6px; font-size: 0.72rem; ${statusNaData==='RE'?'background:var(--success);color:#fff;border-color:transparent;':''}" onclick="apontarStatus(${realIdx}, 'RE')">RE</button>
+              </div>
+            </td>
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                ${badgeCiclos}
+                <button class="btn" style="padding: 3px 6px; font-size: 0.7rem;" onclick="abrirModalCiclos(${realIdx})">
+                  🫁 Gerenciar Ciclos (${qtdExt})
+                </button>
+              </div>
+            </td>
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 3px;">
+                <div style="display:flex; gap:3px;">${tagsTQT.join('') || '<span style="color:var(--text-muted);font-size:0.7rem;">-</span>'}</div>
+                <div style="display: flex; gap: 3px;">
+                  <button class="btn" style="padding: 2px 5px; font-size: 0.68rem;" onclick="abrirModalTQT(${realIdx}, 'tqt')">TQT</button>
+                  <button class="btn" style="padding: 2px 5px; font-size: 0.68rem;" onclick="abrirModalTQT(${realIdx}, 'decanul')">Decanul.</button>
+                </div>
+              </div>
+            </td>
+            <td>
+              <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.72rem;" onclick="abrirModalDesfecho(${realIdx})">
+                🚪 Liberar Leito
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    function apontarStatus(realIdx, novoStatus) {
+      const p = pacientes[realIdx];
+      if (!p) return;
+      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+      if (!p.historico) p.historico = {};
+
+      p.historico[dataRonda] = novoStatus;
+      p.statusHoje = novoStatus;
+
+      const vals = Object.values(p.historico);
+      const cAVM = vals.filter(s => s === 'AVM').length;
+      const cDesc = vals.filter(s => s === 'DESCONEXÃO').length;
+      const cRE = vals.filter(s => s === 'RE').length;
+
+      if (cAVM > 0) p.tempoAVM = cAVM;
+      if (cDesc > 0) p.tempoDesc = cDesc;
+      if (cRE > 0) p.tempoRE = cRE;
+
+      salvarStorage();
+      renderizarCenso();
+      atualizarDashboard();
+      calcularAbaDados();
+    }
+
+    function abrirModalCiclos(realIdx) {
+      const p = pacientes[realIdx];
+      if (!p) return;
+      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+
+      document.getElementById('modalCiclosPacienteIndex').value = realIdx;
+      document.getElementById('modalCiclosPacienteNome').textContent = `${p.nome} • Setor: ${p.setor} • IOT: ${formatarData(p.dataIOT)}`;
+
+      document.getElementById('novoCicloDataExt').value = dataRonda;
+      document.getElementById('novoCicloTipoExt').value = 'PROGRAMADA';
+      document.getElementById('novoCicloTeveRetot').value = 'NAO';
+      document.getElementById('novoCicloDataRetot').value = dataRonda;
+      document.getElementById('novoCicloFalha48h').value = 'SIM';
+      aoMudarNovoCicloRetot();
+
+      renderizarTimelineCiclos(p);
+      document.getElementById('modalCiclosExtubacao').classList.add('active');
+    }
+
+    function fecharModalCiclos() {
+      document.getElementById('modalCiclosExtubacao').classList.remove('active');
+    }
+
+    function aoMudarNovoCicloRetot() {
+      const teve = document.getElementById('novoCicloTeveRetot').value === 'SIM';
+      document.getElementById('boxNovoCicloDataRetot').style.display = teve ? 'flex' : 'none';
+      document.getElementById('boxNovoCicloFalha').style.display = teve ? 'flex' : 'none';
+    }
+
+    function renderizarTimelineCiclos(p) {
+      const box = document.getElementById('listaCiclosTimeline');
+      box.innerHTML = '';
+
+      if (!p.ciclos || p.ciclos.length === 0) {
+        box.innerHTML = `<span style="font-size: 0.75rem; color: var(--text-muted); padding: 4px;">Nenhuma extubação registrada até o momento.</span>`;
+        return;
+      }
+
+      p.ciclos.forEach((c, idx) => {
+        let rotuloTipo = c.tipoExt === 'AUTOEXTUBACAO' ? 'Autoextubação' : c.tipoExt === 'ACIDENTAL' ? 'Acidental' : 'Programada';
+        let badgeRetot = c.teveRetot
+          ? `<span class="badge b-avm">RETOT em ${formatarData(c.dataRetot)} (${c.falha48h ? 'Falha <48h' : 'Tardia >48h'})</span>`
+          : `<span class="badge b-re">Sem Reintubação (Sucesso)</span>`;
+
+        box.innerHTML += `
+          <div class="timeline-item">
+            <div>
+              <strong style="color: var(--primary);">${c.ciclo}ª Extubação:</strong>
+              <span>${formatarData(c.dataExt)} (${rotuloTipo})</span>
+              <div style="margin-top: 3px;">${badgeRetot}</div>
+            </div>
+            <button class="btn btn-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="excluirCiclo(${idx})">Remover</button>
+          </div>
+        `;
+      });
+    }
+
+    function adicionarCicloExtubacao() {
+      const idx = parseInt(document.getElementById('modalCiclosPacienteIndex').value, 10);
+      const p = pacientes[idx];
+      if (!p) return;
+
+      const dtExt = document.getElementById('novoCicloDataExt').value;
+      if (!dtExt) return alert("Informe a data da extubação.");
+
+      const tipoExt = document.getElementById('novoCicloTipoExt').value;
+      const teveRetot = document.getElementById('novoCicloTeveRetot').value === 'SIM';
+      const dtRetot = teveRetot ? document.getElementById('novoCicloDataRetot').value : '';
+      const falha48h = teveRetot ? (document.getElementById('novoCicloFalha48h').value === 'SIM') : false;
+
+      if (!p.ciclos) p.ciclos = [];
+      const numCiclo = p.ciclos.length + 1;
+
+      p.ciclos.push({
+        id: 'c_' + Date.now(),
+        ciclo: numCiclo,
+        dataExt: dtExt,
+        tipoExt: tipoExt,
+        teveRetot: teveRetot,
+        dataRetot: dtRetot,
+        falha48h: falha48h
+      });
+
+      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+      if (!p.historico) p.historico = {};
+
+      if (teveRetot) {
+        p.statusHoje = 'AVM';
+        p.historico[dataRonda] = 'AVM';
+      } else {
+        p.statusHoje = 'RE';
+        p.historico[dataRonda] = 'RE';
+      }
+
+      salvarStorage();
+      renderizarTimelineCiclos(p);
+      renderizarTudo();
+    }
+
+    function excluirCiclo(cicloIndex) {
+      const idx = parseInt(document.getElementById('modalCiclosPacienteIndex').value, 10);
+      const p = pacientes[idx];
+      if (!p || !p.ciclos) return;
+
+      if (confirm("Deseja remover este registro de ciclo de extubação/reintubação?")) {
+        p.ciclos.splice(cicloIndex, 1);
+        p.ciclos.forEach((c, i) => c.ciclo = i + 1);
+
+        salvarStorage();
+        renderizarTimelineCiclos(p);
+        renderizarTudo();
+      }
+    }
+
+    function abrirModalTQT(realIdx, tipo) {
+      const p = pacientes[realIdx];
+      if (!p) return;
+      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+
+      document.getElementById('modalTQTPacienteIndex').value = realIdx;
+      document.getElementById('modalTQTTipoAcao').value = tipo;
+      document.getElementById('modalTQTPacienteNome').textContent = `${p.nome} • Setor: ${p.setor}`;
+
+      if (tipo === 'tqt') {
+        document.getElementById('modalTQTTitulo').textContent = 'Registrar Traqueostomia (TQT)';
+        document.getElementById('lblModalTQTData').textContent = 'Data da Realização da TQT *';
+        document.getElementById('modalTQTData').value = p.dataTQT || dataRonda;
+      } else {
+        document.getElementById('modalTQTTitulo').textContent = 'Registrar Decanulação da TQT';
+        document.getElementById('lblModalTQTData').textContent = 'Data da Decanulação *';
+        document.getElementById('modalTQTData').value = p.dataDecanul || dataRonda;
+      }
+
+      document.getElementById('modalTQTDecanul').classList.add('active');
+    }
+
+    function fecharModalTQT() {
+      document.getElementById('modalTQTDecanul').classList.remove('active');
+    }
+
+    function salvarTQTDecanul() {
+      const idx = parseInt(document.getElementById('modalTQTPacienteIndex').value, 10);
+      const acao = document.getElementById('modalTQTTipoAcao').value;
+      const dt = document.getElementById('modalTQTData').value;
+      const p = pacientes[idx];
+      if (!p) return;
+
+      if (acao === 'tqt') p.dataTQT = dt;
+      else if (acao === 'decanul') p.dataDecanul = dt;
+
+      salvarStorage();
+      fecharModalTQT();
+      renderizarTudo();
+    }
+
+    function abrirModalDesfecho(realIdx) {
+      const p = pacientes[realIdx];
+      if (!p) return;
+      document.getElementById('modalPacienteIndex').value = realIdx;
+      document.getElementById('modalPacienteNome').textContent = `${p.nome} • Setor: ${p.setor} • IOT: ${formatarData(p.dataIOT)}`;
+      document.getElementById('modalDataDesfecho').value = document.getElementById('dataRonda').value || '2026-10-27';
+      document.getElementById('modalDesfecho').classList.add('active');
+    }
+
+    function fecharModalDesfecho() {
+      document.getElementById('modalDesfecho').classList.remove('active');
+    }
+
+    function confirmarDesfecho() {
+      const idx = parseInt(document.getElementById('modalPacienteIndex').value, 10);
+      const p = pacientes[idx];
+      if (!p) return;
+
+      const tipo = document.getElementById('modalTipoDesfecho').value;
+      const dt = document.getElementById('modalDataDesfecho').value;
+
+      p.desfecho = tipo;
+      p.dataDesfecho = dt;
+
+      if (tipo === 'EXTOT SEM FALHA') p.statusHoje = 'RE';
+      if (tipo === 'ÓBITO' || tipo === 'ALTA HOSPITALAR' || tipo === 'TRANSFERÊNCIA') p.statusHoje = tipo;
+
+      salvarStorage();
+      fecharModalDesfecho();
+      renderizarTudo();
+    }
+
+    function resetarFiltrosDash() {
+      document.getElementById('filtroDashInicio').value = '2026-10-01';
+      document.getElementById('filtroDashFim').value = '2026-10-27';
+      setoresSelecionadosDash = [...SETORES_ATIVOS];
+      renderizarChipsSetores();
+      atualizarDashboard();
+    }
+
+    function atualizarDashboard() {
+      const dtInicio = document.getElementById('filtroDashInicio').value;
+      const dtFim = document.getElementById('filtroDashFim').value;
+      const setoresFiltro = [...setoresSelecionadosDash];
+
+      const pacFiltrados = pacientes.filter(p => {
+        if (!setoresFiltro.includes(p.setor)) return false;
+        if (dtInicio && p.dataIOT && p.dataIOT < dtInicio) {
+          if (p.dataDesfecho && p.dataDesfecho < dtInicio) return false;
+        }
+        if (dtFim && p.dataIOT && p.dataIOT > dtFim) return false;
+        return true;
+      });
+
+      const statsPorSetor = {};
+      setoresFiltro.forEach(s => {
+        statsPorSetor[s] = {
+          diasAVM: 0,
+          totalPacientes: 0,
+          totExt: 0,
+          extProg: 0,
+          autoExt: 0,
+          acidExt: 0,
+          totRetot: 0,
+          falhas48h: 0,
+          tqt: 0,
+          obitos: 0,
+          internadosDia: 0
+        };
+      });
+
+      const d1 = dtInicio ? new Date(dtInicio) : new Date('2026-10-01');
+      const d2 = dtFim ? new Date(dtFim) : new Date('2026-10-27');
+      const diffDias = Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1);
+
+      setoresFiltro.forEach(s => {
+        statsPorSetor[s].internadosDia = (CAPACIDADE_SETORES[s] || 10) * diffDias;
+      });
+
+      Object.keys(censoInternados).forEach(dia => {
+        if ((!dtInicio || dia >= dtInicio) && (!dtFim || dia <= dtFim)) {
+          setoresFiltro.forEach(s => {
+            if (censoInternados[dia] && censoInternados[dia][s] !== undefined) {
+              statsPorSetor[s].internadosDia = statsPorSetor[s].internadosDia - (CAPACIDADE_SETORES[s] || 10) + censoInternados[dia][s];
+            }
+          });
+        }
+      });
+
+      pacFiltrados.forEach(p => {
+        const s = statsPorSetor[p.setor] ? p.setor : setoresFiltro[0];
+        statsPorSetor[s].totalPacientes++;
+        statsPorSetor[s].diasAVM += Number(p.tempoAVM) || 0;
+
+        if (p.ciclos && p.ciclos.length > 0) {
+          p.ciclos.forEach(c => {
+            if ((!dtInicio || c.dataExt >= dtInicio) && (!dtFim || c.dataExt <= dtFim)) {
+              statsPorSetor[s].totExt++;
+              if (c.tipoExt === 'PROGRAMADA') statsPorSetor[s].extProg++;
+              else if (c.tipoExt === 'AUTOEXTUBACAO') statsPorSetor[s].autoExt++;
+              else if (c.tipoExt === 'ACIDENTAL') statsPorSetor[s].acidExt++;
+
+              if (c.teveRetot) {
+                statsPorSetor[s].totRetot++;
+                if (c.falha48h) statsPorSetor[s].falhas48h++;
+              }
+            }
+          });
+        }
+
+        if (p.dataTQT && p.dataTQT !== '') statsPorSetor[s].tqt++;
+        if (p.desfecho === 'ÓBITO') statsPorSetor[s].obitos++;
+      });
+
+      let globDiasAVM = 0;
+      let globInternadosDia = 0;
+      let globTotExt = 0;
+      let globExtProg = 0;
+      let globAutoExt = 0;
+      let globAcidExt = 0;
+      let globTotRetot = 0;
+      let globFalhas48h = 0;
+      let globTQT = 0;
+      let globObitos = 0;
+
+      setoresFiltro.forEach(s => {
+        const item = statsPorSetor[s];
+        globDiasAVM += item.diasAVM;
+        globInternadosDia += item.internadosDia;
+        globTotExt += item.totExt;
+        globExtProg += item.extProg;
+        globAutoExt += item.autoExt;
+        globAcidExt += item.acidExt;
+        globTotRetot += item.totRetot;
+        globFalhas48h += item.falhas48h;
+        globTQT += item.tqt;
+        globObitos += item.obitos;
+      });
+
+      const globTxUtilizacao = globInternadosDia > 0 ? Math.min(100, (globDiasAVM / globInternadosDia) * 100).toFixed(1) : '0.0';
+      const globTotNaoProg = globAutoExt + globAcidExt;
+      const globTxNaoProg = globTotExt > 0 ? ((globTotNaoProg / globTotExt) * 100).toFixed(1) : '0.0';
+      const globTxSucesso = globTotExt > 0 ? (((globTotExt - globFalhas48h) / globTotExt) * 100).toFixed(1) : '0.0';
+      const globTxFalha = globTotExt > 0 ? ((globFalhas48h / globTotExt) * 100).toFixed(1) : '0.0';
+      const globTxTQT = pacFiltrados.length > 0 ? ((globTQT / pacFiltrados.length) * 100).toFixed(1) : '0.0';
+      const globTxObito = pacFiltrados.length > 0 ? ((globObitos / pacFiltrados.length) * 100).toFixed(1) : '0.0';
+
+      document.getElementById('dashTaxaUtilizacao').textContent = `${globTxUtilizacao}%`;
+      document.getElementById('dashUtilizacaoSub').textContent = `${globDiasAVM} AVM-dias / ${globInternadosDia} internados-dias`;
+
+      document.getElementById('dashTaxaNaoProg').textContent = `${globTxNaoProg}%`;
+      document.getElementById('dashNaoProgSub').textContent = `${globTotNaoProg} de ${globTotExt} extubações`;
+
+      document.getElementById('dashContagemExtRetot').textContent = `${globTotExt} | ${globTotRetot}`;
+      document.getElementById('dashExtRetotSub').textContent = `${globTotExt} extubações / ${globTotRetot} RETOTs`;
+
+      document.getElementById('dashTaxaSucesso').textContent = `${globTxSucesso}%`;
+      document.getElementById('dashSucessoSub').textContent = `${globTotExt - globFalhas48h} sem reintubação <48h`;
+
+      document.getElementById('dashTaxaFalha').textContent = `${globTxFalha}%`;
+      document.getElementById('dashFalhaSub').textContent = `${globFalhas48h} falhas <48h`;
+
+      document.getElementById('dashPacientesDia').textContent = `${globDiasAVM} d`;
+      document.getElementById('dashTaxaTQT').textContent = `${globTxTQT}%`;
+      document.getElementById('dashTQTSub').textContent = `${globTQT} traqueostomias`;
+
+      document.getElementById('dashTaxaObito').textContent = `${globTxObito}%`;
+      document.getElementById('dashObitoSub').textContent = `${globObitos} óbitos em AVM`;
+
+      renderizarTodosOsGraficos(setoresFiltro, statsPorSetor, pacFiltrados);
+    }
+
+    function renderizarTodosOsGraficos(setores, stats, pacFiltrados) {
+      const isDark = document.body.getAttribute('data-theme') === 'dark';
+      const textColor = isDark ? '#f8fafc' : '#0f172a';
+      const gridColor = isDark ? '#334155' : '#e2e8f0';
+
+      const pluginDataLabelsConfig = (suffix = '', forceShow = false) => ({
+        anchor: 'end',
+        align: 'top',
+        color: textColor,
+        font: { weight: 'bold', size: 11 },
+        formatter: (val) => {
+          if (val === null || val === undefined) return '';
+          if (!forceShow && val === 0) return '';
+          return val + suffix;
+        }
+      });
+
+      // 1. Taxa de Utilização de AVM (%)
+      const ctxUtil = document.getElementById('graficoUtilizacaoSetor').getContext('2d');
+      const dadosUtil = setores.map(s => {
+        const item = stats[s];
+        return item.internadosDia > 0 ? parseFloat(Math.min(100, (item.diasAVM / item.internadosDia) * 100).toFixed(1)) : 0;
+      });
+
+      if (chartInst.utilizacao) chartInst.utilizacao.destroy();
+      chartInst.utilizacao = new Chart(ctxUtil, {
+        type: 'bar',
+        data: {
+          labels: setores,
+          datasets: [{
+            label: 'Taxa de Utilização (%)',
+            data: dadosUtil,
+            backgroundColor: '#0284c7',
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 22 } },
+          scales: {
+            y: { beginAtZero: true, max: 100, grid: { color: gridColor }, ticks: { color: textColor } },
+            x: { grid: { display: false }, ticks: { color: textColor, font: { weight: '600' } } }
+          },
+          plugins: {
+            legend: { display: false },
+            datalabels: pluginDataLabelsConfig('%')
+          }
+        }
+      });
+
+      // 2. Taxa de Extubação Não Programada (%)
+      const ctxNaoProg = document.getElementById('graficoTaxaNaoProg').getContext('2d');
+      const dadosNaoProg = setores.map(s => {
+        const item = stats[s];
+        const naoProg = item.autoExt + item.acidExt;
+        return item.totExt > 0 ? parseFloat(((naoProg / item.totExt) * 100).toFixed(1)) : 0;
+      });
+
+      if (chartInst.txNaoProg) chartInst.txNaoProg.destroy();
+      chartInst.txNaoProg = new Chart(ctxNaoProg, {
+        type: 'bar',
+        data: {
+          labels: setores,
+          datasets: [{
+            label: 'Taxa de Extubação Não Programada (%)',
+            data: dadosNaoProg,
+            backgroundColor: '#d97706',
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 22 } },
+          scales: {
+            y: { beginAtZero: true, max: 100, grid: { color: gridColor }, ticks: { color: textColor } },
+            x: { grid: { display: false }, ticks: { color: textColor, font: { weight: '600' } } }
+          },
+          plugins: {
+            legend: { display: false },
+            datalabels: pluginDataLabelsConfig('%')
+          }
+        }
+      });
+
+      // 3. Comparativo Tipos de Extubação
+      const ctxTiposExt = document.getElementById('graficoComparativoTiposExt').getContext('2d');
+      const dadosProg = setores.map(s => stats[s].extProg);
+      const dadosAuto = setores.map(s => stats[s].autoExt);
+      const dadosAcid = setores.map(s => stats[s].acidExt);
+
+      if (chartInst.tiposExt) chartInst.tiposExt.destroy();
+      chartInst.tiposExt = new Chart(ctxTiposExt, {
+        type: 'bar',
+        data: {
+          labels: setores,
+          datasets: [
+            { label: 'Programadas', data: dadosProg, backgroundColor: '#16a34a', borderRadius: 4 },
+            { label: 'Autoextubação', data: dadosAuto, backgroundColor: '#f59e0b', borderRadius: 4 },
+            { label: 'Acidental', data: dadosAcid, backgroundColor: '#dc2626', borderRadius: 4 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 22 } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } },
+            x: { grid: { display: false }, ticks: { color: textColor, font: { weight: '600' } } }
+          },
+          plugins: {
+            legend: { position: 'bottom', labels: { color: textColor, boxWidth: 12 } },
+            datalabels: pluginDataLabelsConfig('')
+          }
+        }
+      });
+
+      // 4. Sucesso vs Falha de Extubação (%)
+      const ctxSucessoFalha = document.getElementById('graficoSucessoFalha').getContext('2d');
+      const dadosSucesso = setores.map(s => {
+        const item = stats[s];
+        return item.totExt > 0 ? parseFloat((((item.totExt - item.falhas48h) / item.totExt) * 100).toFixed(1)) : 0;
+      });
+      const dadosFalha = setores.map(s => {
+        const item = stats[s];
+        return item.totExt > 0 ? parseFloat(((item.falhas48h / item.totExt) * 100).toFixed(1)) : 0;
+      });
+
+      if (chartInst.sucessoFalha) chartInst.sucessoFalha.destroy();
+      chartInst.sucessoFalha = new Chart(ctxSucessoFalha, {
+        type: 'bar',
+        data: {
+          labels: setores,
+          datasets: [
+            { label: 'Taxa Sucesso (%)', data: dadosSucesso, backgroundColor: '#16a34a', borderRadius: 4 },
+            { label: 'Taxa Falha <48h (%)', data: dadosFalha, backgroundColor: '#ef4444', borderRadius: 4 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 22 } },
+          scales: {
+            y: { beginAtZero: true, max: 100, grid: { color: gridColor }, ticks: { color: textColor } },
+            x: { grid: { display: false }, ticks: { color: textColor, font: { weight: '600' } } }
+          },
+          plugins: {
+            legend: { position: 'bottom', labels: { color: textColor, boxWidth: 12 } },
+            datalabels: pluginDataLabelsConfig('%')
+          }
+        }
+      });
+
+      // 5. Total Pacientes-Dia AVM
+      const ctxPacDia = document.getElementById('graficoPacientesDia').getContext('2d');
+      const dadosDiasAVM = setores.map(s => stats[s].diasAVM);
+
+      if (chartInst.pacDia) chartInst.pacDia.destroy();
+      chartInst.pacDia = new Chart(ctxPacDia, {
+        type: 'bar',
+        data: {
+          labels: setores,
+          datasets: [{
+            label: 'AVM-Dias',
+            data: dadosDiasAVM,
+            backgroundColor: '#7c3aed',
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 22 } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } },
+            x: { grid: { display: false }, ticks: { color: textColor, font: { weight: '600' } } }
+          },
+          plugins: {
+            legend: { display: false },
+            datalabels: pluginDataLabelsConfig(' d')
+          }
+        }
+      });
+
+      // 6. Taxas de TQT e Mortalidade (%)
+      const ctxTQTObito = document.getElementById('graficoTQTObito').getContext('2d');
+      const dadosTxTQT = setores.map(s => {
+        const item = stats[s];
+        return item.totalPacientes > 0 ? parseFloat(((item.tqt / item.totalPacientes) * 100).toFixed(1)) : 0;
+      });
+      const dadosTxObito = setores.map(s => {
+        const item = stats[s];
+        return item.totalPacientes > 0 ? parseFloat(((item.obitos / item.totalPacientes) * 100).toFixed(1)) : 0;
+      });
+
+      if (chartInst.tqtObito) chartInst.tqtObito.destroy();
+      chartInst.tqtObito = new Chart(ctxTQTObito, {
+        type: 'bar',
+        data: {
+          labels: setores,
+          datasets: [
+            { label: 'Taxa Traqueostomia (%)', data: dadosTxTQT, backgroundColor: '#8b5cf6', borderRadius: 4 },
+            { label: 'Mortalidade (%)', data: dadosTxObito, backgroundColor: '#f43f5e', borderRadius: 4 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 22 } },
+          scales: {
+            y: { beginAtZero: true, max: 100, grid: { color: gridColor }, ticks: { color: textColor } },
+            x: { grid: { display: false }, ticks: { color: textColor, font: { weight: '600' } } }
+          },
+          plugins: {
+            legend: { position: 'bottom', labels: { color: textColor, boxWidth: 12 } },
+            datalabels: pluginDataLabelsConfig('%')
+          }
+        }
+      });
+
+      // 7. Evolução Diária (AVM vs Internados)
+      const ctxEvol = document.getElementById('graficoEvolucaoAVM').getContext('2d');
+      const diasMes = ['20/10', '21/10', '22/10', '23/10', '24/10', '25/10', '26/10', '27/10'];
+      const proporcao = setores.length / Math.max(1, SETORES_ATIVOS.length);
+      const valoresAVM = [14, 15, 17, 18, 16, 17, 15, 16].map(v => Math.round(v * proporcao));
+      const valoresInternados = [48, 50, 52, 51, 53, 50, 49, 51].map(v => Math.round(v * proporcao));
+
+      if (chartInst.evolucao) chartInst.evolucao.destroy();
+      chartInst.evolucao = new Chart(ctxEvol, {
+        type: 'line',
+        data: {
+          labels: diasMes,
+          datasets: [
+            {
+              label: 'Pacientes em AVM',
+              data: valoresAVM,
+              borderColor: '#dc2626',
+              backgroundColor: 'rgba(220, 38, 38, 0.1)',
+              tension: 0.25,
+              fill: true,
+              pointRadius: 5,
+              pointBackgroundColor: '#dc2626'
+            },
+            {
+              label: 'Total de Internados',
+              data: valoresInternados,
+              borderColor: '#0284c7',
+              borderDash: [5, 5],
+              tension: 0.25,
+              fill: false,
+              pointRadius: 4,
+              pointBackgroundColor: '#0284c7'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 22 } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } },
+            x: { grid: { color: gridColor }, ticks: { color: textColor } }
+          },
+          plugins: {
+            legend: { position: 'bottom', labels: { color: textColor, boxWidth: 12 } },
+            datalabels: {
+              anchor: 'top',
+              align: 'top',
+              color: textColor,
+              font: { weight: 'bold', size: 10 },
+              formatter: (v) => v
+            }
+          }
+        }
+      });
+
+      // 8. Desfechos Clínicos
+      const ctxDesf = document.getElementById('graficoDesfechos').getContext('2d');
+      const contAtivos = pacFiltrados.filter(p => p.desfecho === 'ATIVO').length;
+      const contAltaVM = pacFiltrados.filter(p => p.desfecho === 'EXTOT SEM FALHA' || p.desfecho === 'DECANULADO SEM FALHA').length;
+      const contTransf = pacFiltrados.filter(p => p.desfecho === 'TRANSFERÊNCIA' || p.desfecho === 'ALTA HOSPITALAR').length;
+      const contObitos = pacFiltrados.filter(p => p.desfecho === 'ÓBITO').length;
+      const totalGeralDesfecho = contAtivos + contAltaVM + contTransf + contObitos;
+
+      if (chartInst.desfechos) chartInst.desfechos.destroy();
+      chartInst.desfechos = new Chart(ctxDesf, {
+        type: 'doughnut',
+        data: {
+          labels: ['Em Acompanhamento', 'Sucesso Desmame', 'Transferência/Alta', 'Óbito'],
+          datasets: [{
+            data: [contAtivos, contAltaVM, contTransf, contObitos],
+            backgroundColor: ['#0284c7', '#16a34a', '#a78bfa', '#ef4444']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { color: textColor, boxWidth: 12 } },
+            datalabels: {
+              color: '#ffffff',
+              font: { weight: 'bold', size: 11 },
+              formatter: (val) => {
+                if (!val || val === 0) return '';
+                const pct = totalGeralDesfecho > 0 ? ((val / totalGeralDesfecho) * 100).toFixed(0) : 0;
+                return `${val} (${pct}%)`;
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function calcularAbaDados() {
+      const stats = {};
+
+      SETORES_ATIVOS.forEach(s => {
+        stats[s] = {
+          total: 0,
+          diasAVM: 0,
+          totExt: 0,
+          totRetot: 0,
+          falhas48h: 0,
+          autoextubacao: 0,
+          acidental: 0,
+          tqt: 0,
+          obitos: 0
+        };
+      });
+
+      pacientes.forEach(p => {
+        const s = stats[p.setor] ? p.setor : SETORES_ATIVOS[0];
+        if (!stats[s]) {
+          stats[s] = { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
+        }
+        stats[s].total++;
+        stats[s].diasAVM += Number(p.tempoAVM) || 0;
+
+        if (p.ciclos && p.ciclos.length > 0) {
+          p.ciclos.forEach(c => {
+            stats[s].totExt++;
+            if (c.tipoExt === 'AUTOEXTUBACAO') stats[s].autoextubacao++;
+            else if (c.tipoExt === 'ACIDENTAL') stats[s].acidental++;
+
+            if (c.teveRetot) {
+              stats[s].totRetot++;
+              if (c.falha48h) stats[s].falhas48h++;
+            }
+          });
+        }
+
+        if (p.dataTQT && p.dataTQT !== '') stats[s].tqt++;
+        if (p.desfecho === 'ÓBITO') stats[s].obitos++;
+      });
+
+      const tbody = document.getElementById('tabelaDadosSetores');
+      tbody.innerHTML = '';
+
+      SETORES_ATIVOS.forEach(set => {
+        const item = stats[set] || { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
+        const cap = (CAPACIDADE_SETORES[set] || 10) * 27;
+        const txUtilizacao = cap > 0 ? ((item.diasAVM / cap) * 100).toFixed(1) + '%' : '-';
+
+        const totNaoProg = item.autoextubacao + item.acidental;
+        const txNaoProg = item.totExt > 0 ? ((totNaoProg / item.totExt) * 100).toFixed(1) + '%' : '0.0%';
+        const txSucesso = item.totExt > 0 ? (((item.totExt - item.falhas48h) / item.totExt) * 100).toFixed(1) + '%' : '-';
+
+        tbody.innerHTML += `
+          <tr>
+            <td><strong>${set}</strong></td>
+            <td>${item.total}</td>
+            <td>${item.diasAVM} d</td>
+            <td>${cap} d</td>
+            <td><strong style="color: var(--primary);">${txUtilizacao}</strong></td>
+            <td><strong>${item.totExt}</strong></td>
+            <td><strong style="color: var(--danger);">${item.totRetot}</strong></td>
+            <td>${item.falhas48h}</td>
+            <td><strong style="color: var(--success);">${txSucesso}</strong></td>
+            <td style="color: var(--warning);">${item.autoextubacao}</td>
+            <td style="color: var(--danger);">${item.acidental}</td>
+            <td>${txNaoProg}</td>
+            <td>${item.tqt}</td>
+            <td>${item.obitos}</td>
+          </tr>
+        `;
+      });
+    }
+
+    function renderizarTabelaUsuarios() {
+      const tbody = document.getElementById('tabelaUsuariosCorpo');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      usuarios.forEach(u => {
+        const isMaster = u.login === 'admin';
+        tbody.innerHTML += `
+          <tr>
+            <td><strong>${u.nome}</strong></td>
+            <td><code>${u.login}</code></td>
+            <td><span class="badge b-info">${u.perfil}</span></td>
+            <td><span class="badge ${u.status === 'Ativo' ? 'b-re' : 'b-avm'}">${u.status}</span></td>
+            <td>${formatarData(u.data)}</td>
+            <td>
+              <div style="display: flex; gap: 4px;">
+                <button class="btn" style="padding: 3px 6px;" onclick="editarUsuario('${u.id}')">✏️</button>
+                ${!isMaster ? `<button class="btn btn-danger" style="padding: 3px 6px;" onclick="excluirUsuario('${u.id}')">🗑️</button>` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    function salvarUsuario(e) {
+      e.preventDefault();
+      alert('O cadastro de usuários precisa ser feito pela função administrativa segura do Supabase. Não é seguro criar contas de autenticação diretamente no HTML.');
+      return;
+      const id = document.getElementById('editUsuarioId').value;
+      const nome = document.getElementById('cadUserNome').value.trim();
+      const login = document.getElementById('cadUserLogin').value.trim();
+      const perfil = document.getElementById('cadUserPerfil').value;
+      const senha = document.getElementById('cadUserSenha').value.trim();
+
+      const loginDuplicado = usuarios.find(u => u.login.toLowerCase() === login.toLowerCase() && u.id !== id);
+      if (loginDuplicado) {
+        alert("Já existe um usuário cadastrado com este login.");
+        return;
+      }
+
+      if (id) {
+        const u = usuarios.find(x => x.id === id);
+        if (u) {
+          u.nome = nome;
+          u.login = login;
+          u.perfil = perfil;
+          if (senha) u.senha = senha;
+        }
+      } else {
+        usuarios.push({
+          id: 'u_' + Date.now(),
+          nome: nome,
+          login: login,
+          perfil: perfil,
+          senha: senha,
+          status: 'Ativo',
+          data: new Date().toISOString().slice(0, 10)
+        });
+      }
+
+      salvarUsuariosStorage();
+      limparFormUsuario();
+      renderizarTabelaUsuarios();
+      alert("Usuário salvo com sucesso!");
+    }
+
+    function editarUsuario(id) {
+      const u = usuarios.find(x => x.id === id);
+      if (!u) return;
+      document.getElementById('editUsuarioId').value = u.id;
+      document.getElementById('cadUserNome').value = u.nome;
+      document.getElementById('cadUserLogin').value = u.login;
+      document.getElementById('cadUserPerfil').value = u.perfil;
+      document.getElementById('cadUserSenha').value = u.senha;
+      document.getElementById('btnSalvarUsuario').textContent = 'Atualizar Usuário';
+    }
+
+    function excluirUsuario(id) {
+      const u = usuarios.find(x => x.id === id);
+      if (!u) return;
+      if (confirm(`Deseja remover o usuário ${u.nome}?`)) {
+        usuarios = usuarios.filter(x => x.id !== id);
+        salvarUsuariosStorage();
+        renderizarTabelaUsuarios();
+      }
+    }
+
+    function limparFormUsuario() {
+      document.getElementById('formUsuario').reset();
+      document.getElementById('editUsuarioId').value = '';
+      document.getElementById('btnSalvarUsuario').textContent = 'Cadastrar Usuário';
+    }
+
+    function renderizarTabelaUnidades() {
+      const tbody = document.getElementById('tabelaUnidadesCorpo');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      SETORES_ATIVOS.forEach(set => {
+        const pacAtivos = pacientes.filter(p => p.setor === set && p.desfecho === 'ATIVO').length;
+        const cap = CAPACIDADE_SETORES[set] || 10;
+        const tipo = TIPOS_SETORES[set] || 'UTI Adulto';
+
+        tbody.innerHTML += `
+          <tr>
+            <td><strong>${set}</strong></td>
+            <td><strong style="color:var(--primary);">${cap} leitos</strong></td>
+            <td><span class="badge b-info">${tipo}</span></td>
+            <td><strong>${pacAtivos}</strong> / ${cap} ocupados</td>
+            <td>
+              <div style="display: flex; gap: 4px;">
+                <button class="btn" style="padding: 3px 6px;" onclick="editarUnidade('${set}')">✏️</button>
+                <button class="btn btn-danger" style="padding: 3px 6px;" onclick="excluirUnidade('${set}')">🗑️</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    let pacientesPreviaImportados = [];
+
+    function aoSelecionarArquivoExcel(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const mesSel = document.getElementById('importMesRef');
+      const nomeLower = file.name.toLowerCase();
+      if (nomeLower.includes('out') || nomeLower.includes('10')) mesSel.value = '10';
+      else if (nomeLower.includes('abr') || nomeLower.includes('04')) mesSel.value = '04';
+      else if (nomeLower.includes('jan') || nomeLower.includes('01')) mesSel.value = '01';
+      else if (nomeLower.includes('fev') || nomeLower.includes('02')) mesSel.value = '02';
+      else if (nomeLower.includes('mar') || nomeLower.includes('03')) mesSel.value = '03';
+      else if (nomeLower.includes('mai') || nomeLower.includes('05')) mesSel.value = '05';
+      else if (nomeLower.includes('jun') || nomeLower.includes('06')) mesSel.value = '06';
+      else if (nomeLower.includes('jul') || nomeLower.includes('07')) mesSel.value = '07';
+      else if (nomeLower.includes('ago') || nomeLower.includes('08')) mesSel.value = '08';
+      else if (nomeLower.includes('set') || nomeLower.includes('09')) mesSel.value = '09';
+      else if (nomeLower.includes('nov') || nomeLower.includes('11')) mesSel.value = '11';
+      else if (nomeLower.includes('dez') || nomeLower.includes('12')) mesSel.value = '12';
+
+      document.getElementById('importStatusArquivo').textContent = `Lendo arquivo: ${file.name}...`;
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          let sheetName = workbook.SheetNames.find(n => n.toUpperCase().includes('AVM')) || workbook.SheetNames[0];
+          const sheet = workbook.Sheets[sheetName];
+          const jsonLinhas = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+          processarLinhasPlanilha(jsonLinhas);
+        } catch (err) {
+          alert('Erro ao interpretar a planilha: ' + err.message);
+          document.getElementById('importStatusArquivo').textContent = 'Erro ao processar arquivo.';
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function converterDataPlanilha(valor, anoPadrao) {
+      if (!valor) return '';
+      if (typeof valor === 'number') {
+        const utcDays = Math.floor(valor - 25569);
+        const utcValue = utcDays * 86400;
+        const dateInfo = new Date(utcValue * 1000);
+        return dateInfo.toISOString().slice(0, 10);
+      }
+      const str = String(valor).trim();
+      const matchBR = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+      if (matchBR) {
+        let dia = matchBR[1].padStart(2, '0');
+        let mes = matchBR[2].padStart(2, '0');
+        let ano = matchBR[3];
+        if (ano.length === 2) ano = '20' + ano;
+        return `${ano}-${mes}-${dia}`;
+      }
+      const matchISO = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (matchISO) return matchISO[0];
+      return '';
+    }
+
+    function processarLinhasPlanilha(linhas) {
+      if (!linhas || linhas.length === 0) {
+        alert('Planilha vazia ou ilegível.');
+        return;
+      }
+
+      let idxCabecalho = -1;
+      let colunas = {};
+
+      for (let i = 0; i < Math.min(10, linhas.length); i++) {
+        const linha = linhas[i];
+        for (let j = 0; j < linha.length; j++) {
+          const celula = String(linha[j] || '').toUpperCase().trim();
+          if (celula === 'NOME' || celula.includes('NOME')) {
+            idxCabecalho = i;
+            break;
+          }
+        }
+        if (idxCabecalho !== -1) break;
+      }
+
+      if (idxCabecalho === -1) {
+        idxCabecalho = 3;
+      }
+
+      const cabecalho = linhas[idxCabecalho].map(c => String(c || '').toUpperCase().trim());
+      cabecalho.forEach((col, idx) => {
+        if (col.includes('NOME')) colunas.nome = idx;
+        else if (col === 'SETOR') colunas.setor = idx;
+        else if (col.includes('REGISTRO') || col.includes('PRONTUARIO')) colunas.registro = idx;
+        else if (col.includes('IDADE')) colunas.idade = idx;
+        else if (col.includes('DATA ADM') || col.includes('ADM')) colunas.dataAdm = idx;
+        else if (col.includes('DESFECHO') && !col.includes('DATA')) colunas.desfecho = idx;
+        else if (col.includes('DATA DESFECHO')) colunas.dataDesfecho = idx;
+        else if (col.includes('DATA DA IOT') || col.includes('IOT')) colunas.dataIOT = idx;
+        else if (col.includes('1ª EXTOT') || col.includes('1A EXTOT')) colunas.ext1 = idx;
+        else if (col.includes('1ª RETOT') || col.includes('RETOT') && !col.includes('2ª')) colunas.retot1 = idx;
+        else if (col.includes('2ª EXTOT') || col.includes('2A EXTOT')) colunas.ext2 = idx;
+        else if (col.includes('2ª RETOT') || col.includes('2A RETOT')) colunas.retot2 = idx;
+        else if (col.includes('3ª EXTOT')) colunas.ext3 = idx;
+        else if (col.includes('TQT') && col.includes('DATA')) colunas.dataTQT = idx;
+        else if (col.includes('DECANUL') && col.includes('DATA')) colunas.dataDecanul = idx;
+        else if (col.includes('TEMPO DE AVM') || col === 'TEMPO AVM') colunas.tempoAVM = idx;
+      });
+
+      if (colunas.nome === undefined) colunas.nome = 0;
+      if (colunas.setor === undefined) colunas.setor = 1;
+      if (colunas.registro === undefined) colunas.registro = 2;
+      if (colunas.idade === undefined) colunas.idade = 3;
+      if (colunas.dataAdm === undefined) colunas.dataAdm = 4;
+      if (colunas.dataIOT === undefined) colunas.dataIOT = 7;
+      if (colunas.ext1 === undefined) colunas.ext1 = 8;
+      if (colunas.retot1 === undefined) colunas.retot1 = 9;
+      if (colunas.ext2 === undefined) colunas.ext2 = 10;
+      if (colunas.retot2 === undefined) colunas.retot2 = 11;
+      if (colunas.ext3 === undefined) colunas.ext3 = 12;
+      if (colunas.dataTQT === undefined) colunas.dataTQT = 13;
+      if (colunas.dataDecanul === undefined) colunas.dataDecanul = 14;
+      if (colunas.tempoAVM === undefined) colunas.tempoAVM = 17;
+
+      const colunasDias = [];
+      cabecalho.forEach((col, idx) => {
+        const num = parseInt(col, 10);
+        if (!isNaN(num) && num >= 1 && num <= 31) {
+          colunasDias.push({ dia: num, colIndex: idx });
+        }
+      });
+
+      const mesRef = document.getElementById('importMesRef').value;
+      const anoRef = document.getElementById('importAnoRef').value;
+
+      pacientesPreviaImportados = [];
+
+      for (let r = idxCabecalho + 1; r < linhas.length; r++) {
+        const row = linhas[r];
+        if (!row || row.length === 0) continue;
+        const nome = String(row[colunas.nome] || '').trim();
+        if (!nome || nome === '0' || nome.length < 3 || nome.includes('INDICADORES')) continue;
+
+        let setor = String(row[colunas.setor] || '').trim().toUpperCase();
+        if (setor.includes('VERMELHA')) setor = 'VERMELHA';
+        else if (setor.includes('CARDIO')) setor = 'CARDIO';
+        else if (setor.includes('CIR A')) setor = 'UTI CIR A';
+        else if (setor.includes('CIR B')) setor = 'UTI CIR B';
+        else if (setor.includes('GERAL')) setor = 'UTI GERAL';
+        if (!setor) setor = 'UTI GERAL';
+
+        const registro = String(row[colunas.registro] || '').trim();
+        const idade = parseInt(row[colunas.idade], 10) || '';
+        const dataAdm = converterDataPlanilha(row[colunas.dataAdm], anoRef);
+        const dataIOT = converterDataPlanilha(row[colunas.dataIOT], anoRef);
+        const dataTQT = converterDataPlanilha(row[colunas.dataTQT], anoRef);
+        const dataDecanul = converterDataPlanilha(row[colunas.dataDecanul], anoRef);
+
+        let desfecho = 'ATIVO';
+        let dataDesfecho = '';
+        if (colunas.desfecho !== undefined && row[colunas.desfecho]) {
+          const rawDesf = String(row[colunas.desfecho]).trim().toUpperCase();
+          if (rawDesf.includes('ÓBITO') || rawDesf.includes('OBITO')) desfecho = 'ÓBITO';
+          else if (rawDesf.includes('TRANSFER')) desfecho = 'TRANSFERÊNCIA';
+          else if (rawDesf.includes('ALTA')) desfecho = 'ALTA HOSPITALAR';
+          else if (rawDesf.includes('PROGRAMADA') || rawDesf.includes('EXTOT SEM FALHA')) desfecho = 'EXTOT SEM FALHA';
+          else if (rawDesf.includes('DECANUL')) desfecho = 'DECANULADO SEM FALHA';
+        }
+        if (colunas.dataDesfecho !== undefined && row[colunas.dataDesfecho]) {
+          dataDesfecho = converterDataPlanilha(row[colunas.dataDesfecho], anoRef);
+        }
+
+        const ciclos = [];
+        const ext1 = converterDataPlanilha(row[colunas.ext1], anoRef);
+        const ret1 = converterDataPlanilha(row[colunas.retot1], anoRef);
+        if (ext1) {
+          ciclos.push({
+            id: 'c_' + r + '_1',
+            ciclo: 1,
+            dataExt: ext1,
+            tipoExt: 'PROGRAMADA',
+            teveRetot: Boolean(ret1),
+            dataRetot: ret1,
+            falha48h: Boolean(ret1)
+          });
+        }
+
+        const ext2 = converterDataPlanilha(row[colunas.ext2], anoRef);
+        const ret2 = converterDataPlanilha(row[colunas.retot2], anoRef);
+        if (ext2) {
+          ciclos.push({
+            id: 'c_' + r + '_2',
+            ciclo: 2,
+            dataExt: ext2,
+            tipoExt: 'PROGRAMADA',
+            teveRetot: Boolean(ret2),
+            dataRetot: ret2,
+            falha48h: Boolean(ret2)
+          });
+        }
+
+        const ext3 = converterDataPlanilha(row[colunas.ext3], anoRef);
+        if (ext3) {
+          ciclos.push({
+            id: 'c_' + r + '_3',
+            ciclo: 3,
+            dataExt: ext3,
+            tipoExt: 'PROGRAMADA',
+            teveRetot: false,
+            dataRetot: '',
+            falha48h: false
+          });
+        }
+
+        const historico = {};
+        let countAVM = 0;
+        let countDesc = 0;
+        let countRE = 0;
+
+        colunasDias.forEach(item => {
+          const val = String(row[item.colIndex] || '').trim().toUpperCase();
+          const diaStr = String(item.dia).padStart(2, '0');
+          const dataISO = `${anoRef}-${mesRef}-${diaStr}`;
+          if (val === 'AVM') {
+            historico[dataISO] = 'AVM';
+            countAVM++;
+          } else if (val.includes('DESC') || val.includes('DESCONEXÃO')) {
+            historico[dataISO] = 'DESCONEXÃO';
+            countDesc++;
+          } else if (val === 'RE') {
+            historico[dataISO] = 'RE';
+            countRE++;
+          }
+        });
+
+        const tempoAVMPlanilha = parseInt(row[colunas.tempoAVM], 10);
+        const tempoFinalAVM = !isNaN(tempoAVMPlanilha) && tempoAVMPlanilha > 0 ? tempoAVMPlanilha : Math.max(1, countAVM);
+
+        let statusHoje = 'AVM';
+        if (desfecho === 'ÓBITO' || desfecho === 'TRANSFERÊNCIA' || desfecho === 'ALTA HOSPITALAR') {
+          statusHoje = desfecho;
+        } else if (countRE > 0 && countAVM === 0) {
+          statusHoje = 'RE';
+        } else if (countDesc > 0 && countAVM === 0) {
+          statusHoje = 'DESCONEXÃO';
+        }
+
+        pacientesPreviaImportados.push({
+          id: 'imp_' + Date.now() + '_' + r,
+          nome: nome.toUpperCase(),
+          setor: setor,
+          registro: registro,
+          idade: idade,
+          dataAdm: dataAdm || dataIOT,
+          dataIOT: dataIOT || dataAdm || `${anoRef}-${mesRef}-01`,
+          ciclos: ciclos,
+          dataTQT: dataTQT,
+          dataDecanul: dataDecanul,
+          desfecho: desfecho,
+          dataDesfecho: dataDesfecho,
+          statusHoje: statusHoje,
+          historico: historico,
+          tempoAVM: tempoFinalAVM,
+          tempoDesc: countDesc,
+          tempoRE: countRE
+        });
+      }
+
+      document.getElementById('importStatusArquivo').textContent = `Sucesso: ${pacientesPreviaImportados.length} pacientes identificados na planilha.`;
+      document.getElementById('contPreviaImport').textContent = pacientesPreviaImportados.length;
+      document.getElementById('btnConfirmarImportacao').style.display = pacientesPreviaImportados.length > 0 ? 'inline-flex' : 'none';
+      document.getElementById('boxPreviaImportacao').style.display = pacientesPreviaImportados.length > 0 ? 'block' : 'none';
+
+      const tbody = document.getElementById('tabelaPreviaImportCorpo');
+      tbody.innerHTML = '';
+      pacientesPreviaImportados.forEach(p => {
+        const qtdDias = Object.keys(p.historico).length;
+        const ciclosTxt = p.ciclos.length > 0 ? `${p.ciclos.length} extubação(ões)` : '-';
+        tbody.innerHTML += `
+          <tr>
+            <td><strong>${p.nome}</strong></td>
+            <td><span class="badge b-info">${p.setor}</span></td>
+            <td>${p.registro || '-'}</td>
+            <td>${formatarData(p.dataIOT)}</td>
+            <td><strong>${p.tempoAVM} d</strong></td>
+            <td>${ciclosTxt}</td>
+            <td>${p.dataTQT ? formatarData(p.dataTQT) : '-'}</td>
+            <td><span class="badge ${p.desfecho === 'ATIVO' ? 'b-re' : (p.desfecho === 'ÓBITO' ? 'b-avm' : 'b-info')}">${p.desfecho}</span></td>
+            <td>${qtdDias} dia(s) mapeado(s)</td>
+          </tr>
+        `;
+      });
+    }
+
+    function confirmarImportacaoPlanilha() {
+      if (pacientesPreviaImportados.length === 0) {
+        alert('Nenhum paciente carregado da planilha.');
+        return;
+      }
+
+      const modo = document.getElementById('importModoOperacao').value;
+
+      if (modo === 'substituir') {
+        if (!confirm(`Atenção: Você escolheu SUBSTITUIR todo o banco. Os ${pacientes.length} registros atuais serão substituídos pelos ${pacientesPreviaImportados.length} da planilha. Deseja prosseguir?`)) {
+          return;
+        }
+        pacientes = [...pacientesPreviaImportados];
+      } else {
+        let adicionados = 0;
+        let atualizados = 0;
+
+        pacientesPreviaImportados.forEach(novoP => {
+          const idxExistente = pacientes.findIndex(p => {
+            if (novoP.registro && p.registro && novoP.registro === p.registro) return true;
+            return p.nome.trim().toUpperCase() === novoP.nome.trim().toUpperCase();
+          });
+
+          if (idxExistente >= 0) {
+            const atual = pacientes[idxExistente];
+            atual.historico = { ...(atual.historico || {}), ...(novoP.historico || {}) };
+            atual.tempoAVM = Math.max(atual.tempoAVM || 0, novoP.tempoAVM || 0);
+            atual.tempoDesc = Math.max(atual.tempoDesc || 0, novoP.tempoDesc || 0);
+            atual.tempoRE = Math.max(atual.tempoRE || 0, novoP.tempoRE || 0);
+            if (novoP.desfecho && novoP.desfecho !== 'ATIVO') {
+              atual.desfecho = novoP.desfecho;
+              atual.dataDesfecho = novoP.dataDesfecho || atual.dataDesfecho;
+              atual.statusHoje = novoP.statusHoje;
+            }
+            if (novoP.ciclos && novoP.ciclos.length > 0) {
+              novoP.ciclos.forEach(c => {
+                if (!atual.ciclos.some(x => x.dataExt === c.dataExt)) {
+                  atual.ciclos.push(c);
+                }
+              });
+              atual.ciclos.forEach((c, i) => c.ciclo = i + 1);
+            }
+            if (novoP.dataTQT) atual.dataTQT = novoP.dataTQT;
+            if (novoP.dataDecanul) atual.dataDecanul = novoP.dataDecanul;
+            atualizados++;
+          } else {
+            pacientes.unshift(novoP);
+            adicionados++;
+          }
+        });
+      }
+
+      salvarStorage();
+      renderizarTudo();
+
+      alert(`Importação concluída com sucesso! O banco agora conta com ${pacientes.length} pacientes.`);
+      irParaAba('censo');
+    }
+
+    function salvarUnidade(e) {
+      e.preventDefault();
+      if (usuarioLogado?.perfil !== 'administrador') { alert('Somente Administrador pode gerenciar unidades.'); return; }
+      const nomeAntigo = document.getElementById('editUnidadeNomeAntigo').value;
+      const nome = document.getElementById('cadUnidadeNome').value.trim().toUpperCase();
+      const cap = parseInt(document.getElementById('cadUnidadeCapacidade').value, 10) || 10;
+      const tipo = document.getElementById('cadUnidadeTipo').value;
+
+      if (!nomeAntigo && SETORES_ATIVOS.includes(nome)) {
+        alert("Já existe uma unidade com este nome.");
+        return;
+      }
+
+      if (nomeAntigo) {
+        const idx = SETORES_ATIVOS.indexOf(nomeAntigo);
+        if (idx >= 0) SETORES_ATIVOS[idx] = nome;
+        delete CAPACIDADE_SETORES[nomeAntigo];
+        delete TIPOS_SETORES[nomeAntigo];
+        pacientes.forEach(p => { if (p.setor === nomeAntigo) p.setor = nome; });
+        salvarStorage();
+      } else {
+        SETORES_ATIVOS.push(nome);
+      }
+
+      CAPACIDADE_SETORES[nome] = cap;
+      TIPOS_SETORES[nome] = tipo;
+
+      salvarUnidadesStorage();
+      limparFormUnidade();
+      atualizarSelectsDeSetores();
+      renderizarChipsSetores();
+      renderizarTudo();
+      renderizarTabelaUnidades();
+      alert("Unidade salva com sucesso!");
+    }
+
+    function editarUnidade(set) {
+      document.getElementById('editUnidadeNomeAntigo').value = set;
+      document.getElementById('cadUnidadeNome').value = set;
+      document.getElementById('cadUnidadeCapacidade').value = CAPACIDADE_SETORES[set] || 10;
+      document.getElementById('cadUnidadeTipo').value = TIPOS_SETORES[set] || 'UTI Adulto';
+      document.getElementById('btnSalvarUnidade').textContent = 'Atualizar Unidade';
+    }
+
+    function excluirUnidade(set) {
+      if (SETORES_ATIVOS.length <= 1) {
+        alert("O hospital precisa ter pelo menos uma unidade cadastrada.");
+        return;
+      }
+      const pacNoSetor = pacientes.filter(p => p.setor === set && p.desfecho === 'ATIVO').length;
+      if (pacNoSetor > 0) {
+        if (!confirm(`Existem ${pacNoSetor} paciente(s) ativos cadastrados neste setor. Deseja realmente excluir esta unidade?`)) return;
+      } else if (!confirm(`Deseja remover a unidade ${set}?`)) {
+        return;
+      }
+
+      SETORES_ATIVOS = SETORES_ATIVOS.filter(s => s !== set);
+      delete CAPACIDADE_SETORES[set];
+      delete TIPOS_SETORES[set];
+      setoresSelecionadosDash = setoresSelecionadosDash.filter(s => s !== set);
+      if (setoresSelecionadosDash.length === 0) setoresSelecionadosDash = [...SETORES_ATIVOS];
+
+      salvarUnidadesStorage();
+      atualizarSelectsDeSetores();
+      renderizarChipsSetores();
+      renderizarTudo();
+      renderizarTabelaUnidades();
+    }
+
+    function limparFormUnidade() {
+      document.getElementById('formUnidade').reset();
+      document.getElementById('editUnidadeNomeAntigo').value = '';
+      document.getElementById('btnSalvarUnidade').textContent = 'Cadastrar Unidade';
+    }
+
+    function aoTrocarDesfecho() {
+      const v = document.getElementById('cadDesfecho').value;
+      const b = document.getElementById('boxDataDesfecho');
+      if (v === 'ATIVO') {
+        b.style.display = 'none';
+        document.getElementById('cadDataDesfecho').value = '';
+      } else {
+        b.style.display = 'flex';
+        if (!document.getElementById('cadDataDesfecho').value) {
+          document.getElementById('cadDataDesfecho').value = new Date().toISOString().slice(0, 10);
+        }
+      }
+    }
+
+    function salvarPaciente(e) {
+      e.preventDefault();
+      const idx = parseInt(document.getElementById('editIndex').value, 10);
+      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+      const desfechoEscolhido = document.getElementById('cadDesfecho').value;
+      const dataDesf = desfechoEscolhido === 'ATIVO' ? '' : document.getElementById('cadDataDesfecho').value;
+
+      const pExistente = idx >= 0 ? pacientes[idx] : null;
+      const hist = pExistente && pExistente.historico ? { ...pExistente.historico } : {};
+      hist[dataRonda] = document.getElementById('cadStatusHoje').value;
+
+      const novo = {
+        id: pExistente ? pExistente.id : 'pac_' + Date.now(),
+        nome: document.getElementById('cadNome').value.trim().toUpperCase(),
+        setor: document.getElementById('cadSetor').value,
+        registro: document.getElementById('cadRegistro').value.trim(),
+        idade: document.getElementById('cadIdade').value ? parseInt(document.getElementById('cadIdade').value, 10) : '',
+        dataAdm: document.getElementById('cadDataAdm').value,
+        dataIOT: document.getElementById('cadDataIOT').value,
+        ciclos: pExistente && pExistente.ciclos ? [...pExistente.ciclos] : [],
+        dataTQT: document.getElementById('cadDataTQT').value,
+        dataDecanul: document.getElementById('cadDataDecanul').value,
+        desfecho: desfechoEscolhido,
+        dataDesfecho: dataDesf,
+        statusHoje: document.getElementById('cadStatusHoje').value,
+        historico: hist,
+        tempoAVM: pExistente ? pExistente.tempoAVM : 1,
+        tempoDesc: pExistente ? pExistente.tempoDesc : 0,
+        tempoRE: pExistente ? pExistente.tempoRE : 0
+      };
+
+      if (idx >= 0) pacientes[idx] = novo;
+      else pacientes.unshift(novo);
+
+      salvarStorage();
+      limparFormulario();
+      irParaAba('censo');
+      renderizarTudo();
+    }
+
+    function limparFormulario() {
+      document.getElementById('formPaciente').reset();
+      document.getElementById('editIndex').value = '-1';
+      document.getElementById('formTitulo').textContent = 'Admitir Novo Paciente no Leito / AVM';
+      document.getElementById('btnSalvar').textContent = 'Salvar no Leito';
+      aoTrocarDesfecho();
+    }
+
+    function editarRegistro(idx) {
+      const p = pacientes[idx];
+      if (!p) return;
+      document.getElementById('editIndex').value = idx;
+      document.getElementById('cadNome').value = p.nome || '';
+      document.getElementById('cadSetor').value = p.setor || '';
+      document.getElementById('cadRegistro').value = p.registro || '';
+      document.getElementById('cadIdade').value = p.idade || '';
+      document.getElementById('cadDataAdm').value = p.dataAdm || '';
+      document.getElementById('cadDataIOT').value = p.dataIOT || '';
+      document.getElementById('cadDataTQT').value = p.dataTQT || '';
+      document.getElementById('cadDataDecanul').value = p.dataDecanul || '';
+      document.getElementById('cadDesfecho').value = p.desfecho || 'ATIVO';
+      document.getElementById('cadDataDesfecho').value = p.dataDesfecho || '';
+      document.getElementById('cadStatusHoje').value = p.statusHoje || 'AVM';
+
+      aoTrocarDesfecho();
+      document.getElementById('formTitulo').textContent = 'Editar Leito: ' + p.nome;
+      document.getElementById('btnSalvar').textContent = 'Atualizar Cadastro';
+
+      document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById('aba-admissao').classList.add('active');
+    }
+
+    function excluirRegistro(idx) {
+      if (confirm(`Excluir permanentemente o prontuário de ${pacientes[idx].nome}?`)) {
+        pacientes.splice(idx, 1);
+        salvarStorage();
+        renderizarTudo();
+      }
+    }
+
+    function renderizarTabelaGeral() {
+      const tbody = document.getElementById('tabelaGeralCorpo');
+      const termo = (document.getElementById('filtroTexto').value || '').toLowerCase();
+      const setorF = document.getElementById('filtroSetor').value;
+      const statusF = document.getElementById('filtroStatusLeito').value;
+
+      const filtrados = pacientes.filter(p => {
+        const mTexto = (p.nome || '').toLowerCase().includes(termo) || (p.registro || '').includes(termo);
+        const mSetor = !setorF || p.setor === setorF;
+        let mStatus = true;
+        if (statusF === 'ATIVO') mStatus = p.desfecho === 'ATIVO';
+        if (statusF === 'DESFECHADOS') mStatus = p.desfecho !== 'ATIVO';
+        return mTexto && mSetor && mStatus;
+      });
+
+      document.getElementById('txtContadorGeral').textContent = `${filtrados.length} de ${pacientes.length} registros`;
+      tbody.innerHTML = '';
+
+      if (filtrados.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhum registro encontrado.</td></tr>';
+        return;
+      }
+
+      filtrados.forEach(p => {
+        const realIdx = pacientes.indexOf(p);
+        let badgeDesf = 'b-info';
+        if (p.desfecho === 'ATIVO') badgeDesf = 'b-re';
+        else if (p.desfecho === 'ÓBITO') badgeDesf = 'b-avm';
+
+        let resumoCiclos = '-';
+        if (p.ciclos && p.ciclos.length > 0) {
+          resumoCiclos = p.ciclos.map(c => `
+            <div style="font-size:0.72rem; margin-bottom:2px;">
+              ${c.ciclo}ª Ext: ${formatarData(c.dataExt)} ${c.teveRetot ? `(RETOT ${formatarData(c.dataRetot)})` : '(Sucesso)'}
+            </div>
+          `).join('');
+        }
+
+        let descTQT = '-';
+        if (p.dataTQT) descTQT = `TQT: ${formatarData(p.dataTQT)}`;
+        if (p.dataDecanul) descTQT += ` | Decanul: ${formatarData(p.dataDecanul)}`;
+
+        tbody.innerHTML += `
+          <tr>
+            <td><strong>${p.nome}</strong></td>
+            <td><span class="badge b-info">${p.setor}</span></td>
+            <td>${p.registro || '-'}</td>
+            <td>${formatarData(p.dataIOT)}</td>
+            <td>${p.tempoAVM || 0} d</td>
+            <td>${resumoCiclos}</td>
+            <td>${descTQT}</td>
+            <td><span class="badge ${badgeDesf}">${p.desfecho}</span></td>
+            <td>${formatarData(p.dataDesfecho)}</td>
+            <td>
+              <div style="display: flex; gap: 4px;">
+                <button class="btn" style="padding: 3px 6px;" onclick="abrirModalCiclos(${realIdx})" title="Ver ciclos">🫁</button>
+                <button class="btn" style="padding: 3px 6px;" onclick="editarRegistro(${realIdx})">✏️</button>
+                <button class="btn btn-danger" style="padding: 3px 6px;" onclick="excluirRegistro(${realIdx})">🗑️</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    function formatarData(d) {
+      if (!d) return '-';
+      const pts = d.split('-');
+      if (pts.length === 3) return `${pts[2]}/${pts[1]}/${pts[0]}`;
+      return d;
+    }
+
+    function exportarCSV() {
+      if (pacientes.length === 0) return alert('Sem dados para exportar.');
+      const header = ['NOME','SETOR','REGISTRO','IDADE','DATA_IOT','QTD_EXTUBACOES','QTD_RETOT','DATA_TQT','DATA_DECANUL','DIAS_AVM','DESFECHO','DATA_DESFECHO'];
+      const rows = pacientes.map(p => {
+        const qtdExt = p.ciclos ? p.ciclos.length : 0;
+        const qtdRet = p.ciclos ? p.ciclos.filter(c => c.teveRetot).length : 0;
+        return [
+          `"${p.nome || ''}"`, `"${p.setor || ''}"`, `"${p.registro || ''}"`, `"${p.idade || ''}"`,
+          `"${p.dataIOT || ''}"`, `"${qtdExt}"`, `"${qtdRet}"`,
+          `"${p.dataTQT || ''}"`, `"${p.dataDecanul || ''}"`, `"${p.tempoAVM || 0}"`, `"${p.desfecho || ''}"`,
+          `"${p.dataDesfecho || ''}"`
+        ].join(';');
+      });
+
+      const csv = '\uFEFF' + [header.join(';'), ...rows].join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      baixarBlob(blob, `indicadores_avm_hdh_${new Date().toISOString().slice(0, 10)}.csv`);
+    }
+
+    function exportarExcel() {
+      if (pacientes.length === 0) return alert('Sem dados para exportar.');
+
+      let html = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head><meta charset="utf-8"/></head>
+        <body>
+          <table border="1">
+            <thead>
+              <tr style="background:#0284c7;color:#ffffff;font-weight:bold;">
+                <th>Nome do Paciente / Leito</th>
+                <th>Setor / Unidade</th>
+                <th>Registro / Prontuário</th>
+                <th>Idade</th>
+                <th>Data da IOT</th>
+                <th>Dias em AVM</th>
+                <th>Total de Extubações</th>
+                <th>Total de RETOTs</th>
+                <th>Data TQT</th>
+                <th>Data Decanulação</th>
+                <th>Desfecho Clínico</th>
+                <th>Data do Desfecho</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      pacientes.forEach(p => {
+        const qtdExt = p.ciclos ? p.ciclos.length : 0;
+        const qtdRet = p.ciclos ? p.ciclos.filter(c => c.teveRetot).length : 0;
+        html += `
+          <tr>
+            <td>${p.nome || ''}</td>
+            <td>${p.setor || ''}</td>
+            <td>${p.registro || ''}</td>
+            <td>${p.idade || ''}</td>
+            <td>${formatarData(p.dataIOT)}</td>
+            <td>${p.tempoAVM || 0}</td>
+            <td>${qtdExt}</td>
+            <td>${qtdRet}</td>
+            <td>${formatarData(p.dataTQT)}</td>
+            <td>${formatarData(p.dataDecanul)}</td>
+            <td>${p.desfecho || ''}</td>
+            <td>${formatarData(p.dataDesfecho)}</td>
+          </tr>
+        `;
+      });
+
+      html += `</tbody></table></body></html>`;
+
+      const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+      baixarBlob(blob, `relatorio_avm_hdh_${new Date().toISOString().slice(0, 10)}.xls`);
+    }
+
+    function exportarWord() {
+      if (pacientes.length === 0) return alert('Sem dados para exportar.');
+
+      const dt = new Date().toLocaleDateString('pt-BR');
+      let html = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head><meta charset='utf-8'><title>Relatório de Indicadores de AVM</title>
+        <style>
+          body { font-family: Arial, sans-serif; font-size: 10pt; color: #333; }
+          h1 { color: #0284c7; font-size: 16pt; margin-bottom: 2px; }
+          h2 { color: #555; font-size: 11pt; margin-bottom: 12px; font-weight: normal; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 9pt; }
+          th { background-color: #f1f5f9; color: #0f172a; padding: 6px; border: 1px solid #cbd5e1; text-align: left; }
+          td { padding: 5px; border: 1px solid #cbd5e1; }
+        </style>
+        </head>
+        <body>
+          <h1>${(hospitalConfig.nome || "HOSPITAL METROPOLITANO SUL DOM HELDER CÂMARA").toUpperCase()}</h1>
+          <h2>Coordenação de Saúde Funcional • Relatório de Pacientes e Desmame Ventilatório (${dt})</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Paciente / Leito</th>
+                <th>Setor</th>
+                <th>Prontuário</th>
+                <th>Data IOT</th>
+                <th>Dias AVM</th>
+                <th>Ciclos Ext.</th>
+                <th>TQT</th>
+                <th>Desfecho</th>
+                <th>Data Desfecho</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      pacientes.forEach(p => {
+        const qtdExt = p.ciclos ? p.ciclos.length : 0;
+        const qtdRet = p.ciclos ? p.ciclos.filter(c => c.teveRetot).length : 0;
+        html += `
+          <tr>
+            <td><strong>${p.nome || ''}</strong></td>
+            <td>${p.setor || ''}</td>
+            <td>${p.registro || '-'}</td>
+            <td>${formatarData(p.dataIOT)}</td>
+            <td>${p.tempoAVM || 0} dias</td>
+            <td>${qtdExt} ext. / ${qtdRet} retot</td>
+            <td>${p.dataTQT ? formatarData(p.dataTQT) : '-'}</td>
+            <td>${p.desfecho || ''}</td>
+            <td>${formatarData(p.dataDesfecho)}</td>
+          </tr>
+        `;
+      });
+
+      html += `</tbody></table></body></html>`;
+
+      const blob = new Blob(['\uFEFF' + html], { type: 'application/msword;charset=utf-8' });
+      baixarBlob(blob, `relatorio_avm_hdh_${new Date().toISOString().slice(0, 10)}.doc`);
+    }
+
+    function exportarPDF() {
+      if (pacientes.length === 0) return alert('Sem dados para exportar.');
+
+      if (window.jspdf && window.jspdf.jsPDF) {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('landscape');
+
+        doc.setFontSize(14);
+        doc.setTextColor(2, 132, 199);
+        doc.text((hospitalConfig.nome || "HOSPITAL METROPOLITANO SUL DOM HELDER CÂMARA").toUpperCase(), 14, 15);
+
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Saúde Funcional • Indicadores de AVM e Desmame Ventilatório • Emitido em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 22);
+
+        const colunas = ["Paciente / Leito", "Setor", "Prontuário", "IOT", "Dias AVM", "Extub.", "RETOT", "TQT", "Desfecho"];
+        const linhas = pacientes.map(p => [
+          p.nome || '',
+          p.setor || '',
+          p.registro || '-',
+          formatarData(p.dataIOT),
+          `${p.tempoAVM || 0} d`,
+          p.ciclos ? p.ciclos.length.toString() : '0',
+          p.ciclos ? p.ciclos.filter(c => c.teveRetot).length.toString() : '0',
+          p.dataTQT ? formatarData(p.dataTQT) : '-',
+          p.desfecho || ''
+        ]);
+
+        doc.autoTable({
+          head: [colunas],
+          body: linhas,
+          startY: 27,
+          theme: 'grid',
+          headStyles: { fillColor: [2, 132, 199], textColor: [255, 255, 255], fontSize: 8 },
+          bodyStyles: { fontSize: 7, textColor: [15, 23, 42] },
+          styles: { cellPadding: 2 }
+        });
+
+        doc.save(`indicadores_avm_hdh_${new Date().toISOString().slice(0, 10)}.pdf`);
+      } else {
+        window.print();
+      }
+    }
+
+    function baixarBlob(blob, nomeArquivo) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = nomeArquivo;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    function renderizarTudo() {
+      renderizarCenso();
+      atualizarDashboard();
+      calcularAbaDados();
+      renderizarTabelaGeral();
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      const hoje = new Date().toISOString().slice(0,10);
+      const inicioMes = `${hoje.slice(0,7)}-01`;
+      document.getElementById('dataRonda').value = hoje;
+      document.getElementById('filtroDashInicio').value = inicioMes;
+      document.getElementById('filtroDashFim').value = hoje;
+      aplicarEstadoAutenticacao();
+      await carregarDados();
+      supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user && !usuarioLogado) await concluirLogin(session.user);
+        if (event === 'SIGNED_OUT') { usuarioLogado = null; pacientes = []; aplicarEstadoAutenticacao(); }
+      });
+    });
+  </script>
+</body>
+</html>
