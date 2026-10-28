@@ -404,8 +404,8 @@
       <button class="btn" onclick="alternarTema()">
         <span id="themeIcon">🌙</span> <span id="themeTxt">Escuro</span>
       </button>
-      <button class="btn btn-danger" onclick="restaurarDados()" title="Restaurar dados das planilhas">
-        ↺ Restaurar
+      <button class="btn btn-danger" onclick="restaurarDados()" title="Recarregar o último cadastro salvo no Supabase">
+        ↺ Restaurar último salvamento
       </button>
       <div class="dropdown">
         <button class="btn btn-primary" onclick="toggleDropdownExportar()">
@@ -586,6 +586,11 @@
           <div class="kpi-desc" id="dashTQTSub">0 TQTs realizadas</div>
         </div>
         <div class="kpi-card">
+          <div class="kpi-title">Tempo IOT até TQT</div>
+          <div class="kpi-num" id="dashTempoIOTTQT">—</div>
+          <div class="kpi-desc" id="dashTempoIOTTQTSub">Média em dias entre intubação e traqueostomia</div>
+        </div>
+        <div class="kpi-card">
           <div class="kpi-title">Mortalidade em AVM</div>
           <div class="kpi-num" id="dashTaxaObito">0.0%</div>
           <div class="kpi-desc" id="dashObitoSub">Óbitos no período</div>
@@ -703,6 +708,7 @@
                 <th>Acidental</th>
                 <th>Tx. Não Prog.</th>
                 <th>TQT</th>
+                <th>Tempo médio IOT–TQT (dias)</th>
                 <th>Óbitos</th>
               </tr>
             </thead>
@@ -1456,8 +1462,27 @@
       }
     }
 
-    function restaurarDados() {
-      alert('A restauração de dados de demonstração foi desativada para evitar inserir dados de pacientes fixos ou fictícios no sistema.');
+    async function restaurarDados() {
+      if (!usuarioLogado || usuarioLogado.perfil !== 'administrador') {
+        alert('Apenas o administrador pode restaurar o cadastro.');
+        return;
+      }
+      if (!confirm('Deseja recarregar pacientes e rondas a partir do último estado salvo no Supabase? Alterações ainda não salvas nesta sessão serão descartadas.')) return;
+
+      const botao = document.querySelector('button[onclick="restaurarDados()"]');
+      if (botao) { botao.disabled = true; botao.textContent = 'Restaurando...'; }
+      try {
+        await carregarDadosRemotos();
+        renderizarTudo();
+        renderizarTabelaUsuarios();
+        renderizarTabelaUnidades();
+        alert('Cadastro recarregado a partir dos dados salvos no Supabase.');
+      } catch (erro) {
+        console.error('Erro ao restaurar cadastro:', erro);
+        alert('Não foi possível recarregar o cadastro salvo.');
+      } finally {
+        if (botao) { botao.disabled = false; botao.textContent = '↺ Restaurar último salvamento'; }
+      }
     }
 
     function irParaAba(nome) {
@@ -1909,6 +1934,14 @@
       atualizarDashboard();
     }
 
+    function diasEntreDatasIOTeTQT(dataIOT, dataTQT) {
+      if (!dataIOT || !dataTQT) return null;
+      const inicio = new Date(String(dataIOT).slice(0, 10) + 'T00:00:00');
+      const fim = new Date(String(dataTQT).slice(0, 10) + 'T00:00:00');
+      if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime()) || fim < inicio) return null;
+      return Math.round((fim - inicio) / 86400000);
+    }
+
     function atualizarDashboard() {
       const dtInicio = document.getElementById('filtroDashInicio').value;
       const dtFim = document.getElementById('filtroDashFim').value;
@@ -1980,6 +2013,11 @@
         }
 
         if (p.dataTQT && p.dataTQT !== '') statsPorSetor[s].tqt++;
+        const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
+        if (diasIOTTQT !== null) {
+          statsPorSetor[s].diasIOTTQT = (statsPorSetor[s].diasIOTTQT || 0) + diasIOTTQT;
+          statsPorSetor[s].qtdIOTTQT = (statsPorSetor[s].qtdIOTTQT || 0) + 1;
+        }
         if (p.desfecho === 'ÓBITO') statsPorSetor[s].obitos++;
       });
 
@@ -2034,6 +2072,19 @@
       document.getElementById('dashPacientesDia').textContent = `${globDiasAVM} d`;
       document.getElementById('dashTaxaTQT').textContent = `${globTxTQT}%`;
       document.getElementById('dashTQTSub').textContent = `${globTQT} traqueostomias`;
+
+      let totalDiasIOTTQT = 0;
+      let totalPacientesIOTTQT = 0;
+      setoresFiltro.forEach(s => {
+        totalDiasIOTTQT += statsPorSetor[s].diasIOTTQT || 0;
+        totalPacientesIOTTQT += statsPorSetor[s].qtdIOTTQT || 0;
+      });
+      document.getElementById('dashTempoIOTTQT').textContent = totalPacientesIOTTQT > 0
+        ? `${(totalDiasIOTTQT / totalPacientesIOTTQT).toFixed(1)} d`
+        : '—';
+      document.getElementById('dashTempoIOTTQTSub').textContent = totalPacientesIOTTQT > 0
+        ? `Média de ${totalPacientesIOTTQT} pacientes com datas válidas`
+        : 'Sem pacientes com ambas as datas válidas';
 
       document.getElementById('dashTaxaObito').textContent = `${globTxObito}%`;
       document.getElementById('dashObitoSub').textContent = `${globObitos} óbitos em AVM`;
@@ -2394,6 +2445,11 @@
         }
 
         if (p.dataTQT && p.dataTQT !== '') stats[s].tqt++;
+        const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
+        if (diasIOTTQT !== null) {
+          stats[s].diasIOTTQT = (stats[s].diasIOTTQT || 0) + diasIOTTQT;
+          stats[s].qtdIOTTQT = (stats[s].qtdIOTTQT || 0) + 1;
+        }
         if (p.desfecho === 'ÓBITO') stats[s].obitos++;
       });
 
@@ -2408,6 +2464,7 @@
         const totNaoProg = item.autoextubacao + item.acidental;
         const txNaoProg = item.totExt > 0 ? ((totNaoProg / item.totExt) * 100).toFixed(1) + '%' : '0.0%';
         const txSucesso = item.totExt > 0 ? (((item.totExt - item.falhas48h) / item.totExt) * 100).toFixed(1) + '%' : '-';
+        const mediaIOTTQT = item.qtdIOTTQT > 0 ? (item.diasIOTTQT / item.qtdIOTTQT).toFixed(1) + ' d' : '—';
 
         tbody.innerHTML += `
           <tr>
@@ -2424,6 +2481,7 @@
             <td style="color: var(--danger);">${item.acidental}</td>
             <td>${txNaoProg}</td>
             <td>${item.tqt}</td>
+            <td>${mediaIOTTQT}</td>
             <td>${item.obitos}</td>
           </tr>
         `;
