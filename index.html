@@ -2491,9 +2491,9 @@
 
         if (p.ciclos && p.ciclos.length > 0) {
           p.ciclos.forEach(c => {
+            if (dtInicio && (!c.dataExt || c.dataExt < dtInicio)) return;
+            if (dtFim && (!c.dataExt || c.dataExt > dtFim)) return;
             stats[s].totExt++;
-            if (dtInicio && c.dataExt && c.dataExt < dtInicio) return;
-            if (dtFim && c.dataExt && c.dataExt > dtFim) return;
             if (c.tipoExt === 'AUTOEXTUBACAO') stats[s].autoextubacao++;
             else if (c.tipoExt === 'ACIDENTAL') stats[s].acidental++;
 
