@@ -687,8 +687,19 @@
           <div>
             <h2 class="card-title">Consolidação Estratificada dos Indicadores por Setor</h2>
             <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
-              Tabela consolidada com somatórios acumulados de ciclos de extubação e taxas assistenciais.
+              Tabela consolidada por setor, com período selecionável para acompanhar os indicadores.
             </p>
+          </div>
+          <div style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
+            <div class="form-group" style="margin:0;">
+              <label for="filtroDadosInicio">De:</label>
+              <input type="date" id="filtroDadosInicio" class="form-ctrl" onchange="calcularAbaDados()">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label for="filtroDadosFim">Até:</label>
+              <input type="date" id="filtroDadosFim" class="form-ctrl" onchange="calcularAbaDados()">
+            </div>
+            <button type="button" class="btn" onclick="resetarFiltrosDados()">Resetar Período</button>
           </div>
         </div>
         <div class="table-box">
@@ -941,8 +952,8 @@
               <input type="text" id="cadUserNome" class="form-ctrl" placeholder="Ex: Dra. Shirley Bezerra" required>
             </div>
             <div class="form-group">
-              <label>Login / Matrícula *</label>
-              <input type="text" id="cadUserLogin" class="form-ctrl" placeholder="Ex: sbezerra" required>
+              <label>E-mail de acesso *</label>
+              <input type="email" id="cadUserLogin" class="form-ctrl" placeholder="nome@hospital.com.br" autocomplete="email" required>
             </div>
             <div class="form-group">
               <label>Perfil de Acesso *</label>
@@ -956,7 +967,7 @@
             </div>
             <div class="form-group">
               <label>Senha de Acesso *</label>
-              <input type="password" id="cadUserSenha" class="form-ctrl" placeholder="Digite a senha..." required>
+              <input type="password" id="cadUserSenha" class="form-ctrl" placeholder="Mínimo de 8 caracteres" minlength="8" autocomplete="new-password" required>
             </div>
           </div>
           <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px;">
@@ -1301,7 +1312,7 @@
       atualizarSelectsDeSetores();
       renderizarChipsSetores();
       renderizarTudo();
-      renderizarTabelaUsuarios();
+      await carregarUsuariosSupabase();
       renderizarTabelaUnidades();
     }
 
@@ -1408,7 +1419,37 @@
       }
     }
 
-    function salvarUsuariosStorage() { /* Cadastro de usuários via frontend será habilitado por função administrativa segura. */ }
+    async function chamarFuncaoUsuarios(payload) {
+      const { data, error } = await supabaseClient.functions.invoke('admin-users', { body: payload });
+      if (error) {
+        let detalhe = error.message || 'Falha ao chamar a função administrativa.';
+        try {
+          const ctx = error.context;
+          if (ctx && typeof ctx.json === 'function') {
+            const corpo = await ctx.json();
+            if (corpo?.error) detalhe = corpo.error;
+          }
+        } catch (_) {}
+        throw new Error(detalhe + ' Confirme se a Edge Function "admin-users" está implantada neste projeto Supabase.');
+      }
+      if (data?.error) throw new Error(data.error);
+      return data;
+    }
+
+    async function carregarUsuariosSupabase() {
+      if (usuarioLogado?.perfil !== 'administrador') return;
+      try {
+        const resultado = await chamarFuncaoUsuarios({ action: 'list' });
+        usuarios = Array.isArray(resultado.users) ? resultado.users : [];
+        renderizarTabelaUsuarios();
+      } catch (erro) {
+        console.error('Falha ao carregar usuários:', erro);
+        const tbody = document.getElementById('tabelaUsuariosCorpo');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6">Não foi possível carregar os usuários. Verifique a implantação da função administrativa no Supabase.</td></tr>';
+      }
+    }
+
+    function salvarUsuariosStorage() { /* Usuários são persistidos pela Edge Function segura admin-users. */ }
 
     function salvarUnidadesStorage() {
       try {
@@ -2406,7 +2447,16 @@
       });
     }
 
+    function resetarFiltrosDados() {
+      const hoje = new Date().toISOString().slice(0, 10);
+      document.getElementById('filtroDadosInicio').value = `${hoje.slice(0, 7)}-01`;
+      document.getElementById('filtroDadosFim').value = hoje;
+      calcularAbaDados();
+    }
+
     function calcularAbaDados() {
+      const dtInicio = document.getElementById('filtroDadosInicio')?.value || '';
+      const dtFim = document.getElementById('filtroDadosFim')?.value || '';
       const stats = {};
 
       SETORES_ATIVOS.forEach(s => {
@@ -2423,7 +2473,15 @@
         };
       });
 
-      pacientes.forEach(p => {
+      const pacientesPeriodo = pacientes.filter(p => {
+        if (dtInicio && p.dataIOT && p.dataIOT < dtInicio) {
+          if (p.dataDesfecho && p.dataDesfecho < dtInicio) return false;
+        }
+        if (dtFim && p.dataIOT && p.dataIOT > dtFim) return false;
+        return true;
+      });
+
+      pacientesPeriodo.forEach(p => {
         const s = stats[p.setor] ? p.setor : SETORES_ATIVOS[0];
         if (!stats[s]) {
           stats[s] = { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
@@ -2434,6 +2492,8 @@
         if (p.ciclos && p.ciclos.length > 0) {
           p.ciclos.forEach(c => {
             stats[s].totExt++;
+            if (dtInicio && c.dataExt && c.dataExt < dtInicio) return;
+            if (dtFim && c.dataExt && c.dataExt > dtFim) return;
             if (c.tipoExt === 'AUTOEXTUBACAO') stats[s].autoextubacao++;
             else if (c.tipoExt === 'ACIDENTAL') stats[s].acidental++;
 
@@ -2444,8 +2504,9 @@
           });
         }
 
-        if (p.dataTQT && p.dataTQT !== '') stats[s].tqt++;
-        const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
+        const tqtNoPeriodo = p.dataTQT && (!dtInicio || p.dataTQT >= dtInicio) && (!dtFim || p.dataTQT <= dtFim);
+        if (tqtNoPeriodo) stats[s].tqt++;
+        const diasIOTTQT = tqtNoPeriodo ? diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT) : null;
         if (diasIOTTQT !== null) {
           stats[s].diasIOTTQT = (stats[s].diasIOTTQT || 0) + diasIOTTQT;
           stats[s].qtdIOTTQT = (stats[s].qtdIOTTQT || 0) + 1;
@@ -2492,87 +2553,85 @@
       const tbody = document.getElementById('tabelaUsuariosCorpo');
       if (!tbody) return;
       tbody.innerHTML = '';
-
       usuarios.forEach(u => {
-        const isMaster = u.login === 'admin';
+        const status = u.ativo ? 'Ativo' : 'Inativo';
         tbody.innerHTML += `
           <tr>
-            <td><strong>${u.nome}</strong></td>
-            <td><code>${u.login}</code></td>
-            <td><span class="badge b-info">${u.perfil}</span></td>
-            <td><span class="badge ${u.status === 'Ativo' ? 'b-re' : 'b-avm'}">${u.status}</span></td>
-            <td>${formatarData(u.data)}</td>
-            <td>
-              <div style="display: flex; gap: 4px;">
-                <button class="btn" style="padding: 3px 6px;" onclick="editarUsuario('${u.id}')">✏️</button>
-                ${!isMaster ? `<button class="btn btn-danger" style="padding: 3px 6px;" onclick="excluirUsuario('${u.id}')">🗑️</button>` : ''}
-              </div>
-            </td>
+            <td><strong>${escaparHtml(u.nome || '')}</strong></td>
+            <td><code>${escaparHtml(u.email || '')}</code></td>
+            <td><span class="badge b-info">${escaparHtml(u.perfil || '')}</span></td>
+            <td><span class="badge ${status === 'Ativo' ? 'b-re' : 'b-avm'}">${status}</span></td>
+            <td>${u.created_at ? formatarData(String(u.created_at).slice(0,10)) : '-'}</td>
+            <td><button class="btn btn-danger" style="padding:3px 6px;" onclick="excluirUsuario('${u.id}')">🗑️</button></td>
           </tr>
         `;
       });
     }
 
-    function salvarUsuario(e) {
-      e.preventDefault();
-      alert('O cadastro de usuários precisa ser feito pela função administrativa segura do Supabase. Não é seguro criar contas de autenticação diretamente no HTML.');
-      return;
-      const id = document.getElementById('editUsuarioId').value;
-      const nome = document.getElementById('cadUserNome').value.trim();
-      const login = document.getElementById('cadUserLogin').value.trim();
-      const perfil = document.getElementById('cadUserPerfil').value;
-      const senha = document.getElementById('cadUserSenha').value.trim();
+    function escaparHtml(valor) {
+      return String(valor).replace(/[&<>"']/g, caractere => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[caractere]));
+    }
 
-      const loginDuplicado = usuarios.find(u => u.login.toLowerCase() === login.toLowerCase() && u.id !== id);
-      if (loginDuplicado) {
-        alert("Já existe um usuário cadastrado com este login.");
+    async function salvarUsuario(e) {
+      e.preventDefault();
+      if (usuarioLogado?.perfil !== 'administrador') {
+        alert('Somente o perfil Administrador pode cadastrar usuários.');
         return;
       }
 
-      if (id) {
-        const u = usuarios.find(x => x.id === id);
-        if (u) {
-          u.nome = nome;
-          u.login = login;
-          u.perfil = perfil;
-          if (senha) u.senha = senha;
-        }
-      } else {
-        usuarios.push({
-          id: 'u_' + Date.now(),
-          nome: nome,
-          login: login,
-          perfil: perfil,
-          senha: senha,
-          status: 'Ativo',
-          data: new Date().toISOString().slice(0, 10)
-        });
+      const nome = document.getElementById('cadUserNome').value.trim();
+      const email = document.getElementById('cadUserLogin').value.trim().toLowerCase();
+      const perfil = document.getElementById('cadUserPerfil').value;
+      const senha = document.getElementById('cadUserSenha').value;
+      const botao = document.getElementById('btnSalvarUsuario');
+
+      if (!nome || !email || !senha) {
+        alert('Preencha nome, e-mail e senha.');
+        return;
+      }
+      if (senha.length < 8) {
+        alert('A senha precisa ter pelo menos 8 caracteres.');
+        return;
       }
 
-      salvarUsuariosStorage();
-      limparFormUsuario();
-      renderizarTabelaUsuarios();
-      alert("Usuário salvo com sucesso!");
+      botao.disabled = true;
+      botao.textContent = 'Salvando...';
+      try {
+        await chamarFuncaoUsuarios({ action: 'create', nome, email, perfil, senha });
+        limparFormUsuario();
+        await carregarUsuariosSupabase();
+        alert('Usuário criado com sucesso. Ele já pode entrar com o e-mail e a senha cadastrados.');
+      } catch (erro) {
+        console.error('Erro ao cadastrar usuário:', erro);
+        alert('Não foi possível cadastrar o usuário: ' + erro.message);
+      } finally {
+        botao.disabled = false;
+        botao.textContent = 'Cadastrar Usuário';
+      }
     }
 
     function editarUsuario(id) {
       const u = usuarios.find(x => x.id === id);
       if (!u) return;
-      document.getElementById('editUsuarioId').value = u.id;
-      document.getElementById('cadUserNome').value = u.nome;
-      document.getElementById('cadUserLogin').value = u.login;
-      document.getElementById('cadUserPerfil').value = u.perfil;
-      document.getElementById('cadUserSenha').value = u.senha;
-      document.getElementById('btnSalvarUsuario').textContent = 'Atualizar Usuário';
+      alert('Para alterar o perfil ou a senha de um usuário, utilize a opção de gestão segura no Supabase. O cadastro nesta tela está habilitado para criação de novos usuários.');
     }
 
-    function excluirUsuario(id) {
+    async function excluirUsuario(id) {
       const u = usuarios.find(x => x.id === id);
       if (!u) return;
-      if (confirm(`Deseja remover o usuário ${u.nome}?`)) {
-        usuarios = usuarios.filter(x => x.id !== id);
-        salvarUsuariosStorage();
-        renderizarTabelaUsuarios();
+      if (u.id === usuarioLogado?.id) {
+        alert('Não é permitido excluir o próprio usuário conectado.');
+        return;
+      }
+      if (!confirm(`Deseja excluir o acesso de ${u.nome} (${u.email})? Esta ação não pode ser desfeita.`)) return;
+      try {
+        await chamarFuncaoUsuarios({ action: 'delete', user_id: id });
+        await carregarUsuariosSupabase();
+        alert('Usuário excluído.');
+      } catch (erro) {
+        alert('Não foi possível excluir o usuário: ' + erro.message);
       }
     }
 
@@ -3402,6 +3461,8 @@
       document.getElementById('dataRonda').value = hoje;
       document.getElementById('filtroDashInicio').value = inicioMes;
       document.getElementById('filtroDashFim').value = hoje;
+      document.getElementById('filtroDadosInicio').value = inicioMes;
+      document.getElementById('filtroDadosFim').value = hoje;
       aplicarEstadoAutenticacao();
       await carregarDados();
       supabaseClient.auth.onAuthStateChange(async (event, session) => {
