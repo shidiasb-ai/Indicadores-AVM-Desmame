@@ -1333,19 +1333,41 @@
       await carregarUsuariosSupabase(); renderizarTabelaUnidades();
     }
 
+    // Busca todas as linhas sem depender do limite padrão de 1.000 registros do Supabase.
+    // A leitura é paginada para suportar dezenas de milhares de pacientes sem truncar o resultado.
+    async function buscarTodasAsLinhas(nomeTabela, colunas, tamanhoPagina = 1000) {
+      const todas = [];
+      for (let inicio = 0; ; inicio += tamanhoPagina) {
+        const fim = inicio + tamanhoPagina - 1;
+        const { data, error } = await supabaseClient
+          .from(nomeTabela)
+          .select(colunas)
+          .range(inicio, fim);
+        if (error) {
+          console.error(`Falha ao carregar ${nomeTabela} (linhas ${inicio}-${fim}):`, error);
+          throw error;
+        }
+        const lote = data || [];
+        todas.push(...lote);
+        if (lote.length < tamanhoPagina) break;
+      }
+      return todas;
+    }
+
     async function carregarDadosRemotos() {
       // Dados individuais só são consultados por perfis não convidados.
-      const { data, error } = await supabaseClient.from('pacientes').select('app_id,dados');
-      if (error) {
-        console.error('Falha ao carregar pacientes:', error);
-        throw new Error('Não foi possível carregar os pacientes salvos no Supabase.');
+      try {
+        const data = await buscarTodasAsLinhas('pacientes', 'app_id,dados');
+        pacientes = data.map(row => ({ ...(row.dados || {}), id: row.app_id }));
+        pacientes.forEach(p => { if (!p.ciclos) p.ciclos = []; });
+
+        const rondas = await buscarTodasAsLinhas('censo_rondas', 'data_ronda,dados');
+        censoInternados = {};
+        rondas.forEach(r => { censoInternados[r.data_ronda] = r.dados || {}; });
+      } catch (error) {
+        console.error('Falha ao carregar dados completos do Supabase:', error);
+        throw new Error('Não foi possível carregar todos os registros salvos no Supabase. Verifique a conexão e as permissões do banco.');
       }
-      pacientes = (data || []).map(row => ({ ...(row.dados || {}), id: row.app_id }));
-      pacientes.forEach(p => { if (!p.ciclos) p.ciclos = []; });
-      const { data: rondas, error: erroRondas } = await supabaseClient.from('censo_rondas').select('data_ronda,dados');
-      if (erroRondas) throw new Error('Não foi possível carregar o censo salvo no Supabase.');
-      censoInternados = {};
-      (rondas || []).forEach(r => { censoInternados[r.data_ronda] = r.dados || {}; });
     }
 
     async function carregarIndicadoresConvidado(dataInicio, dataFim, origem = 'dashboard') {
@@ -1596,8 +1618,11 @@
           status_atual: p.statusHoje || null,
           dados: p
         }));
-        if (rows.length) {
-          const { error } = await supabaseClient.from('pacientes').upsert(rows, { onConflict: 'app_id' });
+        // Grava em lotes para evitar limites de tamanho da requisição com milhares de pacientes.
+        const tamanhoLote = 500;
+        for (let i = 0; i < rows.length; i += tamanhoLote) {
+          const lote = rows.slice(i, i + tamanhoLote);
+          const { error } = await supabaseClient.from('pacientes').upsert(lote, { onConflict: 'app_id' });
           if (error) throw error;
         }
       } catch (err) {
