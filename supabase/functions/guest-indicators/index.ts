@@ -84,6 +84,8 @@ Deno.serve(async (req) => {
       };
       return stats[sector];
     };
+    for (const sector of Object.keys(CAPACIDADE_SETORES)) ensure(sector);
+
     for (const row of censo) {
       const date = isoDate(row.data_ronda);
       if (!inside(date, startDate, endDate) || !row.dados || typeof row.dados !== "object") continue;
@@ -116,11 +118,14 @@ Deno.serve(async (req) => {
       else if (outcome === "ATIVO") s.desfechos.ativos += 1;
       else if (outcome === "EXTOT SEM FALHA" || outcome === "DECANULADO SEM FALHA") s.desfechos.sucesso += 1;
       else if (outcome === "TRANSFERÊNCIA" || outcome === "ALTA HOSPITALAR") s.desfechos.transferencia += 1;
-      if (iot && inside(iot, startDate, endDate)) {
+      if (iot) {
+        const dailyStart = iot > startDate ? iot : startDate;
         const stop = outcomeDate && outcomeDate < endDate ? outcomeDate : endDate;
-        for (let t = new Date(iot + "T00:00:00Z"); t <= new Date(stop + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + 1)) {
-          const day = t.toISOString().slice(0, 10);
-          if (daily[day]) daily[day].avm += 1;
+        if (stop >= dailyStart) {
+          for (let t = new Date(dailyStart + "T00:00:00Z"); t <= new Date(stop + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + 1)) {
+            const day = t.toISOString().slice(0, 10);
+            if (daily[day]) daily[day].avm += 1;
+          }
         }
       }
       if (Array.isArray(p.ciclos)) {
