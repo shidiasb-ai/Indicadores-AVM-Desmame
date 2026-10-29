@@ -3605,7 +3605,7 @@
       document.getElementById('filtroDadosInicio').value = inicioMes;
       document.getElementById('filtroDadosFim').value = hoje;
       aplicarEstadoAutenticacao();
-      await carregarDados();
+      // Registrar o listener antes de consultar a sessão para não perder eventos de autenticação.
       supabaseClient.auth.onAuthStateChange((event, session) => {
         // Não aguardar operações do Supabase dentro do callback de autenticação:
         // isso pode prender o lock interno e provocar piscadas/repetidas tentativas de login.
@@ -3636,6 +3636,16 @@
           document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
           aplicarEstadoAutenticacao();
         }
+      });
+      // Erros ao restaurar uma sessão não devem deixar a aplicação presa no carregamento.
+      carregarDados().catch(err => {
+        console.error('Falha ao restaurar a sessão:', err);
+        const errBox = document.getElementById('loginErroMsg');
+        if (errBox) {
+          errBox.textContent = 'Não foi possível carregar sua sessão. Atualize a página e tente entrar novamente.';
+          errBox.style.display = 'block';
+        }
+        aplicarEstadoAutenticacao();
       });
     });
   </script>
