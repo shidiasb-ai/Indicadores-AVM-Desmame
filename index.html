@@ -2487,11 +2487,11 @@
         return iot && iot <= dia && (!fim || fim >= dia) && (!p.desfecho || p.desfecho === 'ATIVO' || !fim || fim >= dia);
       }).length);
       const valoresInternados = datasEvol.map(dia => {
-        let total = setores.reduce((sum, setor) => sum + (CAPACIDADE_SETORES[setor] || 10), 0);
-        if (censoInternados[dia]) setores.forEach(setor => {
-          if (censoInternados[dia][setor] !== undefined) total += Number(censoInternados[dia][setor]) - (CAPACIDADE_SETORES[setor] || 10);
-        });
-        return Math.max(0, total);
+        if (!censoInternados[dia]) return null;
+        return setores.reduce((sum, setor) => {
+          const valor = censoInternados[dia][setor];
+          return sum + (valor !== undefined && valor !== null && valor !== '' ? Math.max(0, Number(valor) || 0) : 0);
+        }, 0);
       });
 
       if (chartInst.evolucao) chartInst.evolucao.destroy();
