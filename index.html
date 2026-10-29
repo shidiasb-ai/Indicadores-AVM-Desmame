@@ -1389,6 +1389,45 @@
       document.getElementById('dashTempoIOTTQTSub').textContent = t.qtdIOTTQT > 0 ? `Média de ${t.qtdIOTTQT} pacientes com datas válidas` : 'Sem pacientes com ambas as datas válidas';
       document.getElementById('dashTaxaObito').textContent = formatarPercentualAgregado(t.txObito);
       document.getElementById('dashObitoSub').textContent = `${t.obitos || 0} óbitos em AVM`;
+      renderizarGraficosConvidado(data);
+    }
+
+    function renderizarGraficosConvidado(data) {
+      const setores = data?.setores || [];
+      if (!setores.length || !window.Chart) return;
+      const labels = setores.map(s => s.setor);
+      const makeBar = (key, label, color, suffix = '') => {
+        const canvas = document.getElementById(key);
+        if (!canvas) return;
+        const id = key;
+        if (chartInst[id]) chartInst[id].destroy();
+        chartInst[id] = new Chart(canvas.getContext('2d'), {
+          type: 'bar',
+          data: { labels, datasets: [{ label, data: setores.map(s => Number(s.valueForChart ?? 0)), backgroundColor: color, borderRadius: 5 }] },
+          options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { callback: v => `${v}${suffix}` } }, x: { ticks: { autoSkip: false } } }, plugins: { legend: { display: false } } }
+        });
+      };
+      const specs = [
+        ['graficoUtilizacaoSetor', 'Taxa de Utilização (%)', '#0284c7', s => s.txUtilizacao],
+        ['graficoTaxaNaoProg', 'Extubação Não Programada (%)', '#d97706', s => s.txNaoProg],
+        ['graficoComparativoTiposExt', 'Extubações por tipo', '#16a34a', s => s.totExt],
+        ['graficoSucessoFalha', 'Taxa de Sucesso (%)', '#16a34a', s => s.txSucesso],
+        ['graficoPacientesDia', 'Dias de AVM', '#7c3aed', s => s.diasAVM],
+        ['graficoTQTObito', 'Taxa de Traqueostomia (%)', '#8b5cf6', s => s.txTQT],
+        ['graficoEvolucaoAVM', 'Tempo médio IOT–TQT (dias)', '#0f766e', s => s.mediaIOTTQT],
+        ['graficoDesfechos', 'Óbitos', '#ef4444', s => s.obitos]
+      ];
+      specs.forEach(([id, label, color, getValue]) => {
+        const canvas = document.getElementById(id);
+        if (!canvas) return;
+        const vals = setores.map(s => getValue(s) == null ? 0 : Number(getValue(s)));
+        if (chartInst[id]) chartInst[id].destroy();
+        chartInst[id] = new Chart(canvas.getContext('2d'), {
+          type: 'bar',
+          data: { labels, datasets: [{ label, data: vals, backgroundColor: color, borderRadius: 5 }] },
+          options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true }, x: { ticks: { autoSkip: false } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${label}: ${Number(ctx.raw).toLocaleString("pt-BR", {maximumFractionDigits: 1})}` } } } }
+        });
+      });
     }
 
     function renderizarDadosConvidado(data) {
@@ -1442,23 +1481,14 @@
       if (restoreBtn) restoreBtn.style.display = admin ? '' : 'none';
       const exportDropdown = document.querySelector('header .dropdown');
       if (exportDropdown) exportDropdown.style.display = convidado ? 'none' : '';
+      // O perfil Convidado também visualiza os gráficos; os dados são agregados por setor.
       const chartsGrid = document.querySelector('#aba-dashboard .charts-grid');
-      if (chartsGrid) chartsGrid.style.display = convidado ? 'none' : '';
+      if (chartsGrid) chartsGrid.style.display = '';
       const sectorControls = document.getElementById('chipsSetoresContainer')?.parentElement?.parentElement;
-      if (sectorControls) sectorControls.style.display = convidado ? 'none' : '';
-      let guestChartNotice = document.getElementById('avmGuestChartNotice');
-      if (convidado) {
-        pacientes = [];
-        if (!guestChartNotice) {
-          guestChartNotice = document.createElement('div');
-          guestChartNotice.id = 'avmGuestChartNotice';
-          guestChartNotice.className = 'card';
-          guestChartNotice.textContent = 'No perfil Convidado, os resultados são exibidos de forma agregada por setor. Os gráficos detalhados permanecem restritos.';
-          if (chartsGrid) chartsGrid.parentNode.insertBefore(guestChartNotice, chartsGrid);
-        }
-      } else if (guestChartNotice) {
-        guestChartNotice.remove();
-      }
+      if (sectorControls) sectorControls.style.display = '';
+      const guestChartNotice = document.getElementById('avmGuestChartNotice');
+      if (guestChartNotice) guestChartNotice.remove();
+      if (convidado) pacientes = [];
     }
 
     async function realizarLogin(e) {
