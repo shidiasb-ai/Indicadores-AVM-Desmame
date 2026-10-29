@@ -1271,7 +1271,6 @@
     let censoInternados = {};
     let chartInst = {};
     let dadosAgregadosConvidado = null;
-    let requisicaoAgregados = 0;
 
     async function carregarDados() {
       // Só inicia a aplicação após validar a sessão no Supabase Auth.
@@ -1314,7 +1313,6 @@
         // Convidados nunca consultam a tabela de pacientes diretamente.
         pacientes = [];
         censoInternados = {};
-        await carregarIndicadoresConvidado();
       } else {
         dadosAgregadosConvidado = null;
         await carregarDadosRemotos();
@@ -1341,26 +1339,28 @@
       (rondas || []).forEach(r => { censoInternados[r.data_ronda] = r.dados || {}; });
     }
 
-    async function carregarIndicadoresConvidado(dataInicio, dataFim) {
+    async function carregarIndicadoresConvidado(dataInicio, dataFim, origem = 'dashboard') {
       if (usuarioLogado?.perfil !== 'convidado') return null;
-      const numero = ++requisicaoAgregados;
       const { data, error } = await supabaseClient.functions.invoke('guest-indicators', {
         body: {
-          dataInicio: dataInicio || document.getElementById('filtroDadosInicio')?.value || '',
-          dataFim: dataFim || document.getElementById('filtroDadosFim')?.value || ''
+          dataInicio: dataInicio || document.getElementById(origem === 'dados' ? 'filtroDadosInicio' : 'filtroDashInicio')?.value || '',
+          dataFim: dataFim || document.getElementById(origem === 'dados' ? 'filtroDadosFim' : 'filtroDashFim')?.value || ''
         }
       });
+      const paneId = origem === 'dados' ? 'aba-dados' : 'aba-dashboard';
+      let msg = document.getElementById('avmGuestDataError-' + origem);
       if (error || !data?.ok) {
         console.error('Falha ao consultar indicadores agregados:', error || data?.error);
-        if (numero === requisicaoAgregados) {
-          dadosAgregadosConvidado = null;
-          const msg = document.getElementById('avmGuestDataError');
-          if (msg) msg.textContent = 'Não foi possível carregar os indicadores agregados. Verifique se a função guest-indicators foi implantada no Supabase.';
-          else alert('Não foi possível carregar os indicadores agregados. Verifique se a função guest-indicators foi implantada no Supabase.');
+        if (!msg) {
+          msg = document.createElement('div');
+          msg.id = 'avmGuestDataError-' + origem;
+          msg.className = 'card';
+          document.getElementById(paneId)?.prepend(msg);
         }
+        if (msg) msg.textContent = 'Não foi possível carregar os indicadores agregados. Confirme se a função guest-indicators está implantada no Supabase.';
         return null;
       }
-      if (numero !== requisicaoAgregados) return null;
+      if (msg) msg.remove();
       dadosAgregadosConvidado = data;
       return data;
     }
@@ -1446,6 +1446,8 @@
       if (exportDropdown) exportDropdown.style.display = convidado ? 'none' : '';
       const chartsGrid = document.querySelector('#aba-dashboard .charts-grid');
       if (chartsGrid) chartsGrid.style.display = convidado ? 'none' : '';
+      const sectorControls = document.getElementById('chipsSetoresContainer')?.parentElement?.parentElement;
+      if (sectorControls) sectorControls.style.display = convidado ? 'none' : '';
       let guestChartNotice = document.getElementById('avmGuestChartNotice');
       if (convidado) {
         pacientes = [];
@@ -2068,7 +2070,8 @@
       if (usuarioLogado?.perfil === 'convidado') {
         carregarIndicadoresConvidado(
           document.getElementById('filtroDashInicio')?.value || '',
-          document.getElementById('filtroDashFim')?.value || ''
+          document.getElementById('filtroDashFim')?.value || '',
+          'dashboard'
         ).then(renderizarDashboardConvidado);
         return;
       }
@@ -2546,7 +2549,8 @@
       if (usuarioLogado?.perfil === 'convidado') {
         carregarIndicadoresConvidado(
           document.getElementById('filtroDadosInicio')?.value || '',
-          document.getElementById('filtroDadosFim')?.value || ''
+          document.getElementById('filtroDadosFim')?.value || '',
+          'dados'
         ).then(renderizarDadosConvidado);
         return;
       }
