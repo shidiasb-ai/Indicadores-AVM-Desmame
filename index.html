@@ -3652,17 +3652,11 @@
       document.body.removeChild(a);
     }
 
-    // Atualiza somente a aba visível. Recalcular dashboard, indicadores,
-    // censo e tabela a cada alteração deixa o site lento com muitos pacientes.
     function renderizarTudo() {
-      const ativa = document.querySelector('.tab-pane.active');
-      const id = ativa?.id || '';
-      if (id === 'aba-censo') renderizarCenso();
-      else if (id === 'aba-dashboard') atualizarDashboard();
-      else if (id === 'aba-dados') calcularAbaDados();
-      else if (id === 'aba-historico') renderizarTabelaGeral();
-      else if (id === 'aba-usuarios') renderizarTabelaUsuarios();
-      else if (id === 'aba-unidades') renderizarTabelaUnidades();
+      renderizarCenso();
+      atualizarDashboard();
+      calcularAbaDados();
+      renderizarTabelaGeral();
     }
 
     window.addEventListener('DOMContentLoaded', async () => {
