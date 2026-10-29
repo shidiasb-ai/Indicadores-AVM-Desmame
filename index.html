@@ -1421,6 +1421,8 @@
         const canvas = document.getElementById(id);
         if (!canvas) return;
         const vals = setores.map(s => getValue(s) == null ? 0 : Number(getValue(s)));
+        const existingChart = window.Chart.getChart ? window.Chart.getChart(canvas) : null;
+        if (existingChart) existingChart.destroy();
         if (chartInst[id]) chartInst[id].destroy();
         chartInst[id] = new Chart(canvas.getContext('2d'), {
           type: 'bar',
