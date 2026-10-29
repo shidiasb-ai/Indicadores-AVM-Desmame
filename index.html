@@ -1270,6 +1270,8 @@
     let pacientes = [];
     let censoInternados = {};
     let chartInst = {};
+    let dadosAgregadosConvidado = null;
+    let requisicaoAgregados = 0;
 
     async function carregarDados() {
       // Só inicia a aplicação após validar a sessão no Supabase Auth.
@@ -1308,7 +1310,15 @@
       };
       aplicarEstadoAutenticacao();
       aplicarPermissoesPerfil();
-      await carregarDadosRemotos();
+      if (perfil.perfil === 'convidado') {
+        // Convidados nunca consultam a tabela de pacientes diretamente.
+        pacientes = [];
+        censoInternados = {};
+        await carregarIndicadoresConvidado();
+      } else {
+        dadosAgregadosConvidado = null;
+        await carregarDadosRemotos();
+      }
       atualizarSelectsDeSetores();
       renderizarChipsSetores();
       renderizarTudo();
@@ -1317,22 +1327,85 @@
     }
 
     async function carregarDadosRemotos() {
-      // A coluna dados armazena o objeto usado pelo dashboard; a migração SQL anexa essa coluna.
+      // Dados individuais só são consultados por perfis não convidados.
       const { data, error } = await supabaseClient.from('pacientes').select('app_id,dados');
       if (error) {
         console.error('Falha ao carregar pacientes:', error);
-        pacientes = [];
-        alert('Não foi possível carregar os dados do Supabase. Confira se executou o SQL de atualização fornecido junto com este HTML.');
-      } else {
-        pacientes = (data || []).map(row => ({ ...(row.dados || {}), id: row.app_id }));
+        throw new Error('Não foi possível carregar os pacientes salvos no Supabase.');
       }
+      pacientes = (data || []).map(row => ({ ...(row.dados || {}), id: row.app_id }));
       pacientes.forEach(p => { if (!p.ciclos) p.ciclos = []; });
-      // As rondas também ficam no banco, em vez de dados de pacientes fixos no HTML.
       const { data: rondas, error: erroRondas } = await supabaseClient.from('censo_rondas').select('data_ronda,dados');
-      if (!erroRondas) {
-        censoInternados = {};
-        (rondas || []).forEach(r => { censoInternados[r.data_ronda] = r.dados || {}; });
+      if (erroRondas) throw new Error('Não foi possível carregar o censo salvo no Supabase.');
+      censoInternados = {};
+      (rondas || []).forEach(r => { censoInternados[r.data_ronda] = r.dados || {}; });
+    }
+
+    async function carregarIndicadoresConvidado(dataInicio, dataFim) {
+      if (usuarioLogado?.perfil !== 'convidado') return null;
+      const numero = ++requisicaoAgregados;
+      const { data, error } = await supabaseClient.functions.invoke('guest-indicators', {
+        body: {
+          dataInicio: dataInicio || document.getElementById('filtroDadosInicio')?.value || '',
+          dataFim: dataFim || document.getElementById('filtroDadosFim')?.value || ''
+        }
+      });
+      if (error || !data?.ok) {
+        console.error('Falha ao consultar indicadores agregados:', error || data?.error);
+        if (numero === requisicaoAgregados) {
+          dadosAgregadosConvidado = null;
+          const msg = document.getElementById('avmGuestDataError');
+          if (msg) msg.textContent = 'Não foi possível carregar os indicadores agregados. Verifique se a função guest-indicators foi implantada no Supabase.';
+          else alert('Não foi possível carregar os indicadores agregados. Verifique se a função guest-indicators foi implantada no Supabase.');
+        }
+        return null;
       }
+      if (numero !== requisicaoAgregados) return null;
+      dadosAgregadosConvidado = data;
+      return data;
+    }
+
+    function formatarPercentualAgregado(valor) {
+      return `${(Number(valor) || 0).toFixed(1)}%`;
+    }
+
+    function renderizarDashboardConvidado(data) {
+      if (!data?.total) return;
+      const t = data.total;
+      document.getElementById('dashTaxaUtilizacao').textContent = formatarPercentualAgregado(t.txUtilizacao);
+      document.getElementById('dashUtilizacaoSub').textContent = `${t.diasAVM || 0} AVM-dias / ${t.internadosDia || 0} internados-dias`;
+      document.getElementById('dashTaxaNaoProg').textContent = formatarPercentualAgregado(t.txNaoProg);
+      document.getElementById('dashNaoProgSub').textContent = `${(t.autoextubacao || 0) + (t.acidental || 0)} de ${t.totExt || 0} extubações`;
+      document.getElementById('dashContagemExtRetot').textContent = `${t.totExt || 0} | ${t.totRetot || 0}`;
+      document.getElementById('dashExtRetotSub').textContent = `${t.totExt || 0} extubações / ${t.totRetot || 0} RETOTs`;
+      document.getElementById('dashTaxaSucesso').textContent = formatarPercentualAgregado(t.txSucesso);
+      document.getElementById('dashSucessoSub').textContent = `${(t.totExt || 0) - (t.falhas48h || 0)} sem reintubação <48h`;
+      document.getElementById('dashTaxaFalha').textContent = formatarPercentualAgregado(t.txFalha);
+      document.getElementById('dashFalhaSub').textContent = `${t.falhas48h || 0} falhas <48h`;
+      document.getElementById('dashPacientesDia').textContent = `${t.diasAVM || 0} d`;
+      document.getElementById('dashTaxaTQT').textContent = formatarPercentualAgregado(t.txTQT);
+      document.getElementById('dashTQTSub').textContent = `${t.tqt || 0} traqueostomias`;
+      document.getElementById('dashTempoIOTTQT').textContent = t.mediaIOTTQT == null ? '—' : `${Number(t.mediaIOTTQT).toFixed(1)} d`;
+      document.getElementById('dashTempoIOTTQTSub').textContent = t.qtdIOTTQT > 0 ? `Média de ${t.qtdIOTTQT} pacientes com datas válidas` : 'Sem pacientes com ambas as datas válidas';
+      document.getElementById('dashTaxaObito').textContent = formatarPercentualAgregado(t.txObito);
+      document.getElementById('dashObitoSub').textContent = `${t.obitos || 0} óbitos em AVM`;
+    }
+
+    function renderizarDadosConvidado(data) {
+      const tbody = document.getElementById('tabelaDadosSetores');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      (data?.setores || []).forEach(item => {
+        const media = item.mediaIOTTQT == null ? '—' : `${Number(item.mediaIOTTQT).toFixed(1)} d`;
+        tbody.innerHTML += `<tr>
+          <td><strong>${escaparHtml(item.setor)}</strong></td>
+          <td>${item.total || 0}</td><td>${item.diasAVM || 0} d</td><td>${item.internadosDia || 0} d</td>
+          <td><strong>${formatarPercentualAgregado(item.txUtilizacao)}</strong></td>
+          <td>${item.totExt || 0}</td><td>${item.totRetot || 0}</td><td>${item.falhas48h || 0}</td>
+          <td>${formatarPercentualAgregado(item.txSucesso)}</td><td>${item.autoextubacao || 0}</td><td>${item.acidental || 0}</td>
+          <td>${formatarPercentualAgregado(item.txNaoProg)}</td><td>${item.tqt || 0}</td><td>${media}</td><td>${item.obitos || 0}</td>
+        </tr>`;
+      });
     }
 
     function aplicarPermissoesPerfil() {
@@ -1367,18 +1440,24 @@
       if (unitsPane) unitsPane.dataset.restricted = admin ? 'false' : 'true';
       const restoreBtn = document.querySelector('button[onclick="restaurarDados()"]');
       if (restoreBtn) restoreBtn.style.display = admin ? '' : 'none';
-      // Convidado não recebe registros identificáveis. Até o RPC de agregação ser configurado,
-      // mantemos as abas autorizadas visíveis, mas sem buscar pacientes diretamente.
+      const restoreBtn = document.querySelector('button[onclick="restaurarDados()"]');
+      if (restoreBtn) restoreBtn.style.display = admin ? '' : 'none';
+      const exportDropdown = document.querySelector('header .dropdown');
+      if (exportDropdown) exportDropdown.style.display = convidado ? 'none' : '';
+      const chartsGrid = document.querySelector('#aba-dashboard .charts-grid');
+      if (chartsGrid) chartsGrid.style.display = convidado ? 'none' : '';
+      let guestChartNotice = document.getElementById('avmGuestChartNotice');
       if (convidado) {
         pacientes = [];
-        const msg = 'Acesso de convidado: os indicadores agregados serão habilitados após configurar a consulta segura de dados anonimizados no Supabase.';
-        ['aba-dashboard','aba-dados'].forEach(id => {
-          const pane = document.getElementById(id);
-          if (pane && !pane.querySelector('.avm-guest-notice')) {
-            const notice = document.createElement('div'); notice.className='card avm-guest-notice';
-            notice.textContent=msg; pane.prepend(notice);
-          }
-        });
+        if (!guestChartNotice) {
+          guestChartNotice = document.createElement('div');
+          guestChartNotice.id = 'avmGuestChartNotice';
+          guestChartNotice.className = 'card';
+          guestChartNotice.textContent = 'No perfil Convidado, os resultados são exibidos de forma agregada por setor. Os gráficos detalhados permanecem restritos.';
+          if (chartsGrid) chartsGrid.parentNode.insertBefore(guestChartNotice, chartsGrid);
+        }
+      } else if (guestChartNotice) {
+        guestChartNotice.remove();
       }
     }
 
@@ -1514,15 +1593,17 @@
       if (botao) { botao.disabled = true; botao.textContent = 'Restaurando...'; }
       try {
         await carregarDadosRemotos();
+        atualizarSelectsDeSetores();
+        renderizarChipsSetores();
         renderizarTudo();
         renderizarTabelaUsuarios();
         renderizarTabelaUnidades();
         alert('Cadastro recarregado a partir dos dados salvos no Supabase.');
       } catch (erro) {
         console.error('Erro ao restaurar cadastro:', erro);
-        alert('Não foi possível recarregar o cadastro salvo.');
+        alert(erro?.message || 'Não foi possível recarregar o cadastro salvo.');
       } finally {
-        if (botao) { botao.disabled = false; botao.textContent = '↺ Restaurar último salvamento'; }
+        if (botao) { botao.disabled = false; botao.removeAttribute('disabled'); botao.textContent = '↺ Restaurar último salvamento'; }
       }
     }
 
@@ -1984,6 +2065,13 @@
     }
 
     function atualizarDashboard() {
+      if (usuarioLogado?.perfil === 'convidado') {
+        carregarIndicadoresConvidado(
+          document.getElementById('filtroDashInicio')?.value || '',
+          document.getElementById('filtroDashFim')?.value || ''
+        ).then(renderizarDashboardConvidado);
+        return;
+      }
       const dtInicio = document.getElementById('filtroDashInicio').value;
       const dtFim = document.getElementById('filtroDashFim').value;
       const setoresFiltro = [...setoresSelecionadosDash];
@@ -2455,6 +2543,13 @@
     }
 
     function calcularAbaDados() {
+      if (usuarioLogado?.perfil === 'convidado') {
+        carregarIndicadoresConvidado(
+          document.getElementById('filtroDadosInicio')?.value || '',
+          document.getElementById('filtroDadosFim')?.value || ''
+        ).then(renderizarDadosConvidado);
+        return;
+      }
       const dtInicio = document.getElementById('filtroDadosInicio')?.value || '';
       const dtFim = document.getElementById('filtroDadosFim')?.value || '';
       const stats = {};
