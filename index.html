@@ -1745,12 +1745,10 @@
       const container = document.getElementById('gridCensoInternados');
       container.innerHTML = '';
 
-      if (!censoInternados[dt]) {
-        censoInternados[dt] = { ...CAPACIDADE_SETORES };
-      }
+      const censoDoDia = censoInternados[dt] || null;
 
       SETORES_ATIVOS.forEach(set => {
-        const val = censoInternados[dt][set] !== undefined ? censoInternados[dt][set] : (CAPACIDADE_SETORES[set] || 10);
+        const val = censoDoDia && censoDoDia[set] !== undefined ? censoDoDia[set] : '';
         container.innerHTML += `
           <div style="background: var(--surface); padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; gap: 2px;">
             <span style="font-size: 0.68rem; font-weight: 700; color: var(--text-muted);">${set}</span>
@@ -2137,17 +2135,13 @@
 
       const d1 = dtInicio ? new Date(dtInicio) : new Date('2026-10-01');
       const d2 = dtFim ? new Date(dtFim) : new Date('2026-10-27');
-      const diffDias = Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1);
-
-      setoresFiltro.forEach(s => {
-        statsPorSetor[s].internadosDia = (CAPACIDADE_SETORES[s] || 10) * diffDias;
-      });
-
+      // Internados-Dia soma apenas censos reais registrados; não estima dias sem registro pela capacidade.
       Object.keys(censoInternados).forEach(dia => {
         if ((!dtInicio || dia >= dtInicio) && (!dtFim || dia <= dtFim)) {
           setoresFiltro.forEach(s => {
-            if (censoInternados[dia] && censoInternados[dia][s] !== undefined) {
-              statsPorSetor[s].internadosDia = statsPorSetor[s].internadosDia - (CAPACIDADE_SETORES[s] || 10) + censoInternados[dia][s];
+            const valor = censoInternados[dia]?.[s];
+            if (valor !== undefined && valor !== null && valor !== '') {
+              statsPorSetor[s].internadosDia += Math.max(0, Number(valor) || 0);
             }
           });
         }
