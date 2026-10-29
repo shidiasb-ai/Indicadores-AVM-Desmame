@@ -1316,7 +1316,7 @@
       document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn=>btn.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach(pane=>{pane.classList.remove('active');delete pane.dataset.restricted;});
       document.getElementById('aba-dashboard')?.classList.add('active');
-      document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
+      document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\'dashboard\')"]')?.classList.add('active');
       aplicarEstadoAutenticacao();
       aplicarPermissoesPerfil();
       if (perfil.perfil !== 'convidado') {
@@ -1397,43 +1397,24 @@
     }
 
     function renderizarGraficosConvidado(data) {
-      const setores = data?.setores || [];
-      if (!setores.length || !window.Chart) return;
-      const labels = setores.map(s => s.setor);
-      const makeBar = (key, label, color, suffix = '') => {
-        const canvas = document.getElementById(key);
-        if (!canvas) return;
-        const id = key;
-        if (chartInst[id]) chartInst[id].destroy();
-        chartInst[id] = new Chart(canvas.getContext('2d'), {
-          type: 'bar',
-          data: { labels, datasets: [{ label, data: setores.map(s => Number(s.valueForChart ?? 0)), backgroundColor: color, borderRadius: 5 }] },
-          options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { callback: v => `${v}${suffix}` } }, x: { ticks: { autoSkip: false } } }, plugins: { legend: { display: false } } }
-        });
-      };
-      const specs = [
-        ['graficoUtilizacaoSetor', 'Taxa de Utilização (%)', '#0284c7', s => s.txUtilizacao],
-        ['graficoTaxaNaoProg', 'Extubação Não Programada (%)', '#d97706', s => s.txNaoProg],
-        ['graficoComparativoTiposExt', 'Extubações por tipo', '#16a34a', s => s.totExt],
-        ['graficoSucessoFalha', 'Taxa de Sucesso (%)', '#16a34a', s => s.txSucesso],
-        ['graficoPacientesDia', 'Dias de AVM', '#7c3aed', s => s.diasAVM],
-        ['graficoTQTObito', 'Taxa de Traqueostomia (%)', '#8b5cf6', s => s.txTQT],
-        ['graficoEvolucaoAVM', 'Tempo médio IOT–TQT (dias)', '#0f766e', s => s.mediaIOTTQT],
-        ['graficoDesfechos', 'Óbitos', '#ef4444', s => s.obitos]
-      ];
-      specs.forEach(([id, label, color, getValue]) => {
-        const canvas = document.getElementById(id);
-        if (!canvas) return;
-        const vals = setores.map(s => getValue(s) == null ? 0 : Number(getValue(s)));
-        const existingChart = window.Chart.getChart ? window.Chart.getChart(canvas) : null;
-        if (existingChart) existingChart.destroy();
-        if (chartInst[id]) chartInst[id].destroy();
-        chartInst[id] = new Chart(canvas.getContext('2d'), {
-          type: 'bar',
-          data: { labels, datasets: [{ label, data: vals, backgroundColor: color, borderRadius: 5 }] },
-          options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true }, x: { ticks: { autoSkip: false } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${label}: ${Number(ctx.raw).toLocaleString("pt-BR", {maximumFractionDigits: 1})}` } } } }
-        });
-      });
+      const rows = data?.setores || [];
+      if (!window.Chart) return;
+      const setores = rows.map(s => s.setor), stats = {};
+      rows.forEach(s => stats[s.setor] = {diasAVM:+s.diasAVM||0,internadosDia:+s.internadosDia||0,totExt:+s.totExt||0,extProg:+s.programada||0,autoExt:+s.autoextubacao||0,acidExt:+s.acidental||0,falhas48h:+s.falhas48h||0,tqt:+s.tqt||0,obitos:+s.obitos||0,totalPacientes:+s.total||0});
+      const dark=document.body.getAttribute('data-theme')==='dark', textColor=dark?'#f8fafc':'#0f172a', gridColor=dark?'#334155':'#e2e8f0';
+      const labels=setores, dl=suffix=>({anchor:'end',align:'top',color:textColor,font:{weight:'bold',size:11},formatter:v=>v==null||v===0?'':v+suffix});
+      const axes=max=>({y:{beginAtZero:true,...(max===undefined?{}:{max}),grid:{color:gridColor},ticks:{color:textColor}},x:{grid:{display:false},ticks:{color:textColor,font:{weight:'600'}}}});
+      const draw=(id,config)=>{const c=document.getElementById(id);if(!c)return;const old=window.Chart.getChart?window.Chart.getChart(c):null;if(old)old.destroy();if(chartInst[id]){try{chartInst[id].destroy()}catch(_){}}chartInst[id]=new Chart(c.getContext('2d'),config);};
+      draw('graficoUtilizacaoSetor',{type:'bar',data:{labels,datasets:[{label:'Taxa de Utilização (%)',data:setores.map(s=>stats[s].internadosDia>0?+(Math.min(100,stats[s].diasAVM/stats[s].internadosDia*100)).toFixed(1):0),backgroundColor:'#0284c7',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(100),plugins:{legend:{display:false},datalabels:dl('%')}}});
+      draw('graficoTaxaNaoProg',{type:'bar',data:{labels,datasets:[{label:'Taxa de Extubação Não Programada (%)',data:setores.map(s=>stats[s].totExt>0?+((stats[s].autoExt+stats[s].acidExt)/stats[s].totExt*100).toFixed(1):0),backgroundColor:'#d97706',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(100),plugins:{legend:{display:false},datalabels:dl('%')}}});
+      draw('graficoComparativoTiposExt',{type:'bar',data:{labels,datasets:[{label:'Programadas',data:setores.map(s=>stats[s].extProg),backgroundColor:'#16a34a',borderRadius:4},{label:'Autoextubação',data:setores.map(s=>stats[s].autoExt),backgroundColor:'#f59e0b',borderRadius:4},{label:'Acidental',data:setores.map(s=>stats[s].acidExt),backgroundColor:'#dc2626',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(),plugins:{legend:{position:'bottom',labels:{color:textColor,boxWidth:12}},datalabels:dl('')}}});
+      draw('graficoSucessoFalha',{type:'bar',data:{labels,datasets:[{label:'Taxa Sucesso (%)',data:setores.map(s=>stats[s].totExt>0?+((stats[s].totExt-stats[s].falhas48h)/stats[s].totExt*100).toFixed(1):0),backgroundColor:'#16a34a',borderRadius:4},{label:'Taxa Falha <48h (%)',data:setores.map(s=>stats[s].totExt>0?+(stats[s].falhas48h/stats[s].totExt*100).toFixed(1):0),backgroundColor:'#ef4444',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(100),plugins:{legend:{position:'bottom',labels:{color:textColor,boxWidth:12}},datalabels:dl('%')}}});
+      draw('graficoPacientesDia',{type:'bar',data:{labels,datasets:[{label:'AVM-Dias',data:setores.map(s=>stats[s].diasAVM),backgroundColor:'#7c3aed',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(),plugins:{legend:{display:false},datalabels:dl(' d')}}});
+      draw('graficoTQTObito',{type:'bar',data:{labels,datasets:[{label:'Taxa Traqueostomia (%)',data:setores.map(s=>stats[s].totalPacientes>0?+(stats[s].tqt/stats[s].totalPacientes*100).toFixed(1):0),backgroundColor:'#8b5cf6',borderRadius:4},{label:'Mortalidade (%)',data:setores.map(s=>stats[s].totalPacientes>0?+(stats[s].obitos/stats[s].totalPacientes*100).toFixed(1):0),backgroundColor:'#f43f5e',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(100),plugins:{legend:{position:'bottom',labels:{color:textColor,boxWidth:12}},datalabels:dl('%')}}});
+      const ev=data?.evolucaoDiaria||[];
+      draw('graficoEvolucaoAVM',{type:'line',data:{labels:ev.map(d=>String(d.data||'').slice(8,10)+'/'+String(d.data||'').slice(5,7)),datasets:[{label:'Pacientes em AVM',data:ev.map(d=>+d.avm||0),borderColor:'#dc2626',backgroundColor:'rgba(220,38,38,0.1)',tension:0.25,fill:true,pointRadius:5,pointBackgroundColor:'#dc2626'},{label:'Total de Internados',data:ev.map(d=>+d.internados||0),borderColor:'#0284c7',borderDash:[5,5],tension:0.25,fill:false,pointRadius:4,pointBackgroundColor:'#0284c7'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:{y:{beginAtZero:true,grid:{color:gridColor},ticks:{color:textColor}},x:{grid:{color:gridColor},ticks:{color:textColor}}},plugins:{legend:{position:'bottom',labels:{color:textColor,boxWidth:12}},datalabels:{anchor:'top',align:'top',color:textColor,font:{weight:'bold',size:10},formatter:v=>v}}}});
+      const d=data?.total?.desfechos||{ativos:0,sucesso:0,transferencia:0,obitos:0}, sum=(+d.ativos||0)+(+d.sucesso||0)+(+d.transferencia||0)+(+d.obitos||0);
+      draw('graficoDesfechos',{type:'doughnut',data:{labels:['Em Acompanhamento','Sucesso Desmame','Transferência/Alta','Óbito'],datasets:[{data:[+d.ativos||0,+d.sucesso||0,+d.transferencia||0,+d.obitos||0],backgroundColor:['#0284c7','#16a34a','#a78bfa','#ef4444']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:textColor,boxWidth:12}},datalabels:{color:'#ffffff',font:{weight:'bold',size:11},formatter:v=>!v?'':v+' ('+(sum>0?(v/sum*100).toFixed(0):0)+'%)'}}}});
     }
 
     function renderizarDadosConvidado(data) {
@@ -3623,7 +3604,7 @@
           document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn=>{btn.classList.remove('active');btn.style.display='';});
           document.querySelectorAll('.tab-pane').forEach(pane=>{pane.classList.remove('active');delete pane.dataset.restricted;});
           document.getElementById('aba-dashboard')?.classList.add('active');
-          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
+          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\'dashboard\')"]')?.classList.add('active');
           aplicarEstadoAutenticacao();
           await concluirLogin(session.user);
         } else if (event === 'SIGNED_OUT') {
@@ -3632,7 +3613,7 @@
           document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn=>{btn.style.display='';btn.classList.remove('active');});
           document.querySelectorAll('.tab-pane').forEach(pane=>{pane.classList.remove('active');delete pane.dataset.restricted;});
           document.getElementById('aba-dashboard')?.classList.add('active');
-          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
+          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\'dashboard\')"]')?.classList.add('active');
           aplicarEstadoAutenticacao();
         }
       });
