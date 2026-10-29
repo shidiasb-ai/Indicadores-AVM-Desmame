@@ -3624,7 +3624,19 @@
           // O fluxo de login manual e o listener compartilham a mesma promessa.
           // Adia a chamada para fora do callback síncrono do Supabase.
           setTimeout(() => {
-            if (supabaseClient.auth && session?.user?.id === userId) concluirLogin(session.user).catch(err => console.error('Falha ao concluir login:', err));
+            // O login manual já pode ter concluído o carregamento antes deste callback.
+            // Não reinicializar a aplicação para o mesmo usuário: isso causava piscadas e corridas.
+            if (supabaseClient.auth && session?.user?.id === userId && usuarioLogado?.id !== userId) {
+              concluirLogin(session.user).catch(err => {
+                console.error('Falha ao concluir login:', err);
+                const errBox = document.getElementById('loginErroMsg');
+                if (errBox) {
+                  errBox.textContent = 'Não foi possível concluir o acesso. Atualize a página e tente novamente.';
+                  errBox.style.display = 'block';
+                }
+                aplicarEstadoAutenticacao();
+              });
+            }
           }, 0);
         } else if (event === 'SIGNED_OUT') {
           loginGeneration++;
