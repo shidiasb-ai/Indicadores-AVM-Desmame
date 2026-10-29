@@ -3622,7 +3622,7 @@
           document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn => { btn.style.display = ''; btn.classList.remove('active'); });
           document.querySelectorAll('.tab-pane').forEach(pane => { pane.classList.remove('active'); delete pane.dataset.restricted; });
           document.getElementById('aba-dashboard')?.classList.add('active');
-          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
+          document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn => { if (btn.getAttribute('onclick') === "irParaAba('dashboard')") btn.classList.add('active'); });
           aplicarEstadoAutenticacao();
         }
       });
