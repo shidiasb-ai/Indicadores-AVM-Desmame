@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     const censo: any[] = [];
     for (let from = 0; ; from += 1000) {
       const { data, error } = await admin.from("censo_rondas").select("data_ronda,dados").order("data_ronda").range(from, from + 999);
-      if (error) break;
+      if (error) return json({ error: "Não foi possível consultar o censo para calcular os internados-dias." }, 500);
       censo.push(...(data || []));
       if (!data || data.length < 1000) break;
     }
