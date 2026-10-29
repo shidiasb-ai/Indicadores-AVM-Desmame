@@ -2481,10 +2481,28 @@
 
       // 7. Evolução Diária (AVM vs Internados)
       const ctxEvol = document.getElementById('graficoEvolucaoAVM').getContext('2d');
-      const diasMes = ['20/10', '21/10', '22/10', '23/10', '24/10', '25/10', '26/10', '27/10'];
-      const proporcao = setores.length / Math.max(1, SETORES_ATIVOS.length);
-      const valoresAVM = [14, 15, 17, 18, 16, 17, 15, 16].map(v => Math.round(v * proporcao));
-      const valoresInternados = [48, 50, 52, 51, 53, 50, 49, 51].map(v => Math.round(v * proporcao));
+      // Evolução calculada com os dados reais do período e dos setores selecionados.
+      const inicioEvol = document.getElementById('filtroDashInicio')?.value || new Date().toISOString().slice(0, 7) + '-01';
+      const fimEvol = document.getElementById('filtroDashFim')?.value || new Date().toISOString().slice(0, 10);
+      const datasEvol = [];
+      const dataCursor = new Date(inicioEvol + 'T00:00:00');
+      const dataFinal = new Date(fimEvol + 'T00:00:00');
+      for (let guard = 0; dataCursor <= dataFinal && guard < 370; guard++, dataCursor.setDate(dataCursor.getDate() + 1)) {
+        datasEvol.push(new Date(dataCursor.getTime() - dataCursor.getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+      }
+      const diasMes = datasEvol.map(d => d.slice(8, 10) + '/' + d.slice(5, 7));
+      const valoresAVM = datasEvol.map(dia => pacFiltrados.filter(p => {
+        const iot = String(p.dataIOT || '').slice(0, 10);
+        const fim = String(p.dataDesfecho || '').slice(0, 10);
+        return iot && iot <= dia && (!fim || fim >= dia) && (!p.desfecho || p.desfecho === 'ATIVO' || !fim || fim >= dia);
+      }).length);
+      const valoresInternados = datasEvol.map(dia => {
+        let total = setores.reduce((sum, setor) => sum + (CAPACIDADE_SETORES[setor] || 10), 0);
+        if (censoInternados[dia]) setores.forEach(setor => {
+          if (censoInternados[dia][setor] !== undefined) total += Number(censoInternados[dia][setor]) - (CAPACIDADE_SETORES[setor] || 10);
+        });
+        return Math.max(0, total);
+      });
 
       if (chartInst.evolucao) chartInst.evolucao.destroy();
       chartInst.evolucao = new Chart(ctxEvol, {
