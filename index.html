@@ -1284,44 +1284,48 @@
       await concluirLogin(session.user);
     }
 
+    let loginInFlight = null;
+    let loginGeneration = 0;
     async function concluirLogin(authUser) {
-      const { data: perfil, error } = await supabaseClient
-        .from('perfis_usuarios')
-        .select('id,nome,perfil,ativo,unidade_id')
-        .eq('id', authUser.id)
-        .maybeSingle();
+      if (!authUser?.id) return;
+      if (loginInFlight?.userId === authUser.id) return loginInFlight.promise;
+      const generation = ++loginGeneration;
+      const promise = concluirLoginInterno(authUser, generation);
+      loginInFlight = { userId: authUser.id, promise };
+      try { return await promise; }
+      finally { if (loginInFlight?.promise === promise) loginInFlight = null; }
+    }
+
+    async function concluirLoginInterno(authUser, generation) {
+      const { data: perfil, error } = await supabaseClient.from('perfis_usuarios')
+        .select('id,nome,perfil,ativo,unidade_id').eq('id', authUser.id).maybeSingle();
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      if (generation !== loginGeneration || sessionData?.session?.user?.id !== authUser.id) return;
       if (error || !perfil || !perfil.ativo) {
+        usuarioLogado = null; pacientes = []; censoInternados = {}; dadosAgregadosConvidado = null;
         await supabaseClient.auth.signOut();
-        usuarioLogado = null;
         aplicarEstadoAutenticacao();
         const errBox = document.getElementById('loginErroMsg');
         errBox.textContent = 'Usuário sem perfil ativo cadastrado. Solicite ao administrador a liberação do acesso.';
         errBox.style.display = 'block';
         return;
       }
-      usuarioLogado = {
-        id: perfil.id,
-        nome: perfil.nome || authUser.email || 'Usuário',
-        email: authUser.email,
-        perfil: perfil.perfil,
-        unidade_id: perfil.unidade_id,
-        status: 'Ativo'
-      };
+      usuarioLogado = { id:perfil.id, nome:perfil.nome||authUser.email||'Usuário', email:authUser.email,
+        perfil:perfil.perfil, unidade_id:perfil.unidade_id, status:'Ativo' };
+      pacientes = []; censoInternados = {}; dadosAgregadosConvidado = null;
+      document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn=>btn.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(pane=>{pane.classList.remove('active');delete pane.dataset.restricted;});
+      document.getElementById('aba-dashboard')?.classList.add('active');
+      document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
       aplicarEstadoAutenticacao();
       aplicarPermissoesPerfil();
-      if (perfil.perfil === 'convidado') {
-        // Convidados nunca consultam a tabela de pacientes diretamente.
-        pacientes = [];
-        censoInternados = {};
-      } else {
-        dadosAgregadosConvidado = null;
+      if (perfil.perfil !== 'convidado') {
         await carregarDadosRemotos();
+        const { data: current } = await supabaseClient.auth.getSession();
+        if (generation !== loginGeneration || current?.session?.user?.id !== authUser.id) return;
       }
-      atualizarSelectsDeSetores();
-      renderizarChipsSetores();
-      renderizarTudo();
-      await carregarUsuariosSupabase();
-      renderizarTabelaUnidades();
+      atualizarSelectsDeSetores(); renderizarChipsSetores(); renderizarTudo();
+      await carregarUsuariosSupabase(); renderizarTabelaUnidades();
     }
 
     async function carregarDadosRemotos() {
@@ -3595,28 +3599,22 @@
       aplicarEstadoAutenticacao();
       await carregarDados();
       supabaseClient.auth.onAuthStateChange(async (event, session) => {
-        // A sessão do Supabase é compartilhada entre abas do mesmo navegador.
-        // Se outro usuário entrar em outra aba, atualizar o perfil desta aba também.
         if (event === 'SIGNED_IN' && session?.user && session.user.id !== usuarioLogado?.id) {
-          usuarioLogado = null;
-          pacientes = [];
-          censoInternados = {};
-          dadosAgregadosConvidado = null;
+          loginGeneration++; loginInFlight=null;
+          usuarioLogado=null; pacientes=[]; censoInternados={}; dadosAgregadosConvidado=null;
+          document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn=>{btn.classList.remove('active');btn.style.display='';});
+          document.querySelectorAll('.tab-pane').forEach(pane=>{pane.classList.remove('active');delete pane.dataset.restricted;});
+          document.getElementById('aba-dashboard')?.classList.add('active');
+          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
           aplicarEstadoAutenticacao();
           await concluirLogin(session.user);
-        }
-        if (event === 'SIGNED_OUT') {
-          usuarioLogado = null;
-          pacientes = [];
-          censoInternados = {};
-          dadosAgregadosConvidado = null;
-          document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn => { btn.style.display = ''; btn.classList.remove('active'); });
-          document.querySelectorAll('.tab-pane').forEach(pane => { pane.classList.remove('active'); });
+        } else if (event === 'SIGNED_OUT') {
+          loginGeneration++; loginInFlight=null;
+          usuarioLogado=null; pacientes=[]; censoInternados={}; dadosAgregadosConvidado=null;
+          document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn=>{btn.style.display='';btn.classList.remove('active');});
+          document.querySelectorAll('.tab-pane').forEach(pane=>{pane.classList.remove('active');delete pane.dataset.restricted;});
           document.getElementById('aba-dashboard')?.classList.add('active');
-          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\'dashboard\')"]')?.classList.add('active');
-          document.querySelectorAll('.tab-pane').forEach(pane => { delete pane.dataset.restricted; });
-          const guestNotice = document.getElementById('avmGuestChartNotice');
-          if (guestNotice) guestNotice.remove();
+          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
           aplicarEstadoAutenticacao();
         }
       });
