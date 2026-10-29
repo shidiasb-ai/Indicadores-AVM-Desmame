@@ -2174,13 +2174,22 @@
           });
         }
 
-        if (p.dataTQT && p.dataTQT !== '') statsPorSetor[s].tqt++;
+        if (p.desfecho === 'ÓBITO') statsPorSetor[s].obitos++;
+      });
+
+      // Tempo IOT–TQT e total de TQT: considerar a data da TQT no período selecionado,
+      // independentemente de a IOT ter ocorrido em período anterior.
+      pacientes.forEach(p => {
+        if (!setoresFiltro.includes(p.setor) || !p.dataTQT) return;
+        if (dtInicio && p.dataTQT < dtInicio) return;
+        if (dtFim && p.dataTQT > dtFim) return;
+        const item = statsPorSetor[p.setor];
+        item.tqt++;
         const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
         if (diasIOTTQT !== null) {
-          statsPorSetor[s].diasIOTTQT = (statsPorSetor[s].diasIOTTQT || 0) + diasIOTTQT;
-          statsPorSetor[s].qtdIOTTQT = (statsPorSetor[s].qtdIOTTQT || 0) + 1;
+          item.diasIOTTQT = (item.diasIOTTQT || 0) + diasIOTTQT;
+          item.qtdIOTTQT = (item.qtdIOTTQT || 0) + 1;
         }
-        if (p.desfecho === 'ÓBITO') statsPorSetor[s].obitos++;
       });
 
       let globDiasAVM = 0;
@@ -2663,14 +2672,22 @@
           });
         }
 
-        const tqtNoPeriodo = p.dataTQT && (!dtInicio || p.dataTQT >= dtInicio) && (!dtFim || p.dataTQT <= dtFim);
-        if (tqtNoPeriodo) stats[s].tqt++;
-        const diasIOTTQT = tqtNoPeriodo ? diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT) : null;
+        if (p.desfecho === 'ÓBITO') stats[s].obitos++;
+      });
+
+      // Indicador IOT–TQT: incluir casos pela data de realização da TQT no período.
+      pacientes.forEach(p => {
+        if (!p.dataTQT) return;
+        if (dtInicio && p.dataTQT < dtInicio) return;
+        if (dtFim && p.dataTQT > dtFim) return;
+        const s = stats[p.setor] ? p.setor : SETORES_ATIVOS[0];
+        if (!stats[s]) return;
+        stats[s].tqt++;
+        const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
         if (diasIOTTQT !== null) {
           stats[s].diasIOTTQT = (stats[s].diasIOTTQT || 0) + diasIOTTQT;
           stats[s].qtdIOTTQT = (stats[s].qtdIOTTQT || 0) + 1;
         }
-        if (p.desfecho === 'ÓBITO') stats[s].obitos++;
       });
 
       const tbody = document.getElementById('tabelaDadosSetores');
