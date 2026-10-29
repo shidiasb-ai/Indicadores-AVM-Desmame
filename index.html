@@ -1302,11 +1302,16 @@
       const { data: sessionData } = await supabaseClient.auth.getSession();
       if (generation !== loginGeneration || sessionData?.session?.user?.id !== authUser.id) return;
       if (error || !perfil || !perfil.ativo) {
+        // Não encerrar a sessão automaticamente: isso provocava o efeito de piscar
+        // e ocultava a causa real quando a consulta do perfil falhava.
         usuarioLogado = null; pacientes = []; censoInternados = {}; dadosAgregadosConvidado = null;
-        await supabaseClient.auth.signOut();
         aplicarEstadoAutenticacao();
         const errBox = document.getElementById('loginErroMsg');
-        errBox.textContent = 'Usuário sem perfil ativo cadastrado. Solicite ao administrador a liberação do acesso.';
+        errBox.textContent = error
+          ? 'A autenticação funcionou, mas não foi possível consultar seu perfil no Supabase: ' + (error.message || 'erro de consulta') + '.'
+          : (!perfil
+            ? 'A autenticação funcionou, mas não foi encontrado um perfil em perfis_usuarios para este usuário. Peça ao administrador para conferir o cadastro; nenhum dado foi apagado.'
+            : 'Seu perfil existe, mas está inativo. Peça ao administrador para verificar o campo ativo em perfis_usuarios.');
         errBox.style.display = 'block';
         return;
       }
@@ -1500,8 +1505,9 @@
         await concluirLogin(data.user);
       } catch (err) {
         console.error('Erro no login:', err);
-        errBox.textContent = 'Ocorreu uma falha ao entrar. Aguarde alguns segundos e tente novamente.';
+        errBox.textContent = 'Falha ao concluir o acesso: ' + (err?.message || 'erro inesperado') + '.';
         errBox.style.display = 'block';
+        aplicarEstadoAutenticacao();
       } finally {
         loginSubmitInProgress = false;
         if (submitButton) { submitButton.disabled = false; submitButton.textContent = submitButton.dataset.originalText || 'Entrar'; }
