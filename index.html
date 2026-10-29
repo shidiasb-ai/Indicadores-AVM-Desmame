@@ -818,8 +818,8 @@
           <span id="txtContadorGeral" style="font-size: 0.8rem; color: var(--text-muted);"></span>
         </div>
         <div style="display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
-          <input type="text" id="filtroTexto" class="form-ctrl" style="flex: 2; min-width: 180px;" placeholder="Filtrar por nome ou prontuário..." oninput="renderizarTabelaGeral()">
-          <select id="filtroSetor" class="form-ctrl" style="flex: 1;" onchange="renderizarTabelaGeral()">
+          <input type="text" id="filtroTexto" class="form-ctrl" style="flex: 2; min-width: 180px;" placeholder="Filtrar por nome ou prontuário..." oninput="paginaAtualGeral=0;renderizarTabelaGeral()">
+          <select id="filtroSetor" class="form-ctrl" style="flex: 1;" onchange="paginaAtualGeral=0;renderizarTabelaGeral()">
             <option value="">Todos os Setores</option>
             <option value="UTI GERAL">UTI GERAL</option>
             <option value="CARDIO">CARDIO</option>
@@ -827,31 +827,20 @@
             <option value="UTI CIR B">UTI CIR B</option>
             <option value="VERMELHA">SALA VERMELHA</option>
           </select>
-          <select id="filtroStatusLeito" class="form-ctrl" style="flex: 1;" onchange="renderizarTabelaGeral()">
+          <select id="filtroStatusLeito" class="form-ctrl" style="flex: 1;" onchange="paginaAtualGeral=0;renderizarTabelaGeral()">
             <option value="">Todos os Status</option>
             <option value="ATIVO">Somente Leitos Ativos</option>
             <option value="DESFECHADOS">Somente Desfechados (Liberados)</option>
           </select>
         </div>
-        <div class="table-box">
-          <table>
-            <thead>
-              <tr>
-                <th>Paciente / Leito</th>
-                <th>Setor</th>
-                <th>Prontuário</th>
-                <th>Data IOT</th>
-                <th>Dias AVM</th>
-                <th>Histórico de Ciclos Ext/RETOT</th>
-                <th>TQT / Decanul.</th>
-                <th>Desfecho</th>
-                <th>Data Desfecho</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody id="tabelaGeralCorpo"></tbody>
-          </table>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:8px 0">
+          <span style="font-size:.78rem;color:var(--text-muted)">Tabela paginada para manter o sistema rápido. Todos os registros continuam disponíveis pela busca e filtros.</span>
+          <div style="display:flex;align-items:center;gap:8px"><label for="tamanhoPaginaGeral" style="font-size:.78rem;color:var(--text-muted)">Por página</label><select id="tamanhoPaginaGeral" class="form-ctrl" style="padding:5px 8px;width:auto" onchange="mudarTamanhoPaginaGeral()"><option value="50">50</option><option value="100" selected>100</option><option value="250">250</option></select></div>
         </div>
+        <div class="table-box">
+          <table><thead><tr><th>Paciente / Leito</th><th>Setor</th><th>Prontuário</th><th>Data IOT</th><th>Dias AVM</th><th>Histórico de Ciclos Ext/RETOT</th><th>TQT / Decanul.</th><th>Desfecho</th><th>Data Desfecho</th><th>Ações</th></tr></thead><tbody id="tabelaGeralCorpo"></tbody></table>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:10px"><span id="infoPaginacaoGeral" style="font-size:.8rem;color:var(--text-muted)"></span><div style="display:flex;gap:6px"><button class="btn" id="btnPaginaAnteriorGeral" onclick="mudarPaginaGeral(-1)">← Anterior</button><button class="btn" id="btnProximaPaginaGeral" onclick="mudarPaginaGeral(1)">Próxima →</button></div></div>
       </div>
     </div>
 
@@ -3391,30 +3380,42 @@
       }
     }
 
+    let paginaAtualGeral = 0;
+    function mudarPaginaGeral(delta) {
+      paginaAtualGeral = Math.max(0, paginaAtualGeral + delta);
+      renderizarTabelaGeral();
+    }
+    function mudarTamanhoPaginaGeral() { paginaAtualGeral = 0; renderizarTabelaGeral(); }
+
     function renderizarTabelaGeral() {
       const tbody = document.getElementById('tabelaGeralCorpo');
+      if (!tbody) return;
       const termo = (document.getElementById('filtroTexto').value || '').toLowerCase();
       const setorF = document.getElementById('filtroSetor').value;
       const statusF = document.getElementById('filtroStatusLeito').value;
-
+      const tamanhoPagina = Math.max(1, Number(document.getElementById('tamanhoPaginaGeral')?.value) || 100);
       const filtrados = pacientes.filter(p => {
-        const mTexto = (p.nome || '').toLowerCase().includes(termo) || (p.registro || '').includes(termo);
+        const mTexto = (p.nome || '').toLowerCase().includes(termo) || String(p.registro || '').toLowerCase().includes(termo);
         const mSetor = !setorF || p.setor === setorF;
         let mStatus = true;
         if (statusF === 'ATIVO') mStatus = p.desfecho === 'ATIVO';
         if (statusF === 'DESFECHADOS') mStatus = p.desfecho !== 'ATIVO';
         return mTexto && mSetor && mStatus;
       });
-
+      const totalPaginas = Math.max(1, Math.ceil(filtrados.length / tamanhoPagina));
+      paginaAtualGeral = Math.max(0, Math.min(paginaAtualGeral, totalPaginas - 1));
+      const inicio = paginaAtualGeral * tamanhoPagina;
+      const pagina = filtrados.slice(inicio, inicio + tamanhoPagina);
       document.getElementById('txtContadorGeral').textContent = `${filtrados.length} de ${pacientes.length} registros`;
+      document.getElementById('infoPaginacaoGeral').textContent = filtrados.length ? `Exibindo ${inicio + 1}–${Math.min(inicio + tamanhoPagina, filtrados.length)} de ${filtrados.length} • Página ${paginaAtualGeral + 1} de ${totalPaginas}` : 'Nenhum registro para exibir';
+      document.getElementById('btnPaginaAnteriorGeral').disabled = paginaAtualGeral === 0;
+      document.getElementById('btnProximaPaginaGeral').disabled = paginaAtualGeral >= totalPaginas - 1;
       tbody.innerHTML = '';
-
-      if (filtrados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhum registro encontrado.</td></tr>';
+      if (pagina.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:20px">Nenhum registro encontrado.</td></tr>';
         return;
       }
-
-      filtrados.forEach(p => {
+      pagina.forEach(p => {
         const realIdx = pacientes.indexOf(p);
         let badgeDesf = 'b-info';
         if (p.desfecho === 'ATIVO') badgeDesf = 'b-re';
@@ -3454,6 +3455,8 @@
           </tr>
         `;
       });
+    }
+
     }
 
     function formatarData(d) {
