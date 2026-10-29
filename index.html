@@ -1478,19 +1478,34 @@
       if (convidado) pacientes = [];
     }
 
+    let loginSubmitInProgress = false;
     async function realizarLogin(e) {
       e.preventDefault();
+      if (loginSubmitInProgress) return;
+      loginSubmitInProgress = true;
+      const form = document.getElementById('formLogin');
+      const submitButton = form?.querySelector('button[type="submit"], button:not([type])');
+      if (submitButton) { submitButton.disabled = true; submitButton.dataset.originalText = submitButton.textContent; submitButton.textContent = 'Entrando...'; }
       const email = document.getElementById('loginUsuario').value.trim();
       const senha = document.getElementById('loginSenha').value;
       const errBox = document.getElementById('loginErroMsg');
       errBox.style.display = 'none';
-      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: senha });
-      if (error || !data.user) {
-        errBox.textContent = 'E-mail ou senha incorretos.';
+      try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: senha });
+        if (error || !data.user) {
+          errBox.textContent = 'Não foi possível entrar. Confira o e-mail e a senha e tente novamente.';
+          errBox.style.display = 'block';
+          return;
+        }
+        await concluirLogin(data.user);
+      } catch (err) {
+        console.error('Erro no login:', err);
+        errBox.textContent = 'Ocorreu uma falha ao entrar. Aguarde alguns segundos e tente novamente.';
         errBox.style.display = 'block';
-        return;
+      } finally {
+        loginSubmitInProgress = false;
+        if (submitButton) { submitButton.disabled = false; submitButton.textContent = submitButton.dataset.originalText || 'Entrar'; }
       }
-      await concluirLogin(data.user);
     }
 
     function aplicarEstadoAutenticacao() {
@@ -3597,23 +3612,34 @@
       document.getElementById('filtroDadosFim').value = hoje;
       aplicarEstadoAutenticacao();
       await carregarDados();
-      supabaseClient.auth.onAuthStateChange(async (event, session) => {
+      supabaseClient.auth.onAuthStateChange((event, session) => {
+        // Não aguardar operações do Supabase dentro do callback de autenticação:
+        // isso pode prender o lock interno e provocar piscadas/repetidas tentativas de login.
         if (event === 'SIGNED_IN' && session?.user && session.user.id !== usuarioLogado?.id) {
-          loginGeneration++; loginInFlight=null;
-          usuarioLogado=null; pacientes=[]; censoInternados={}; dadosAgregadosConvidado=null;
-          document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn=>{btn.classList.remove('active');btn.style.display='';});
-          document.querySelectorAll('.tab-pane').forEach(pane=>{pane.classList.remove('active');delete pane.dataset.restricted;});
-          document.getElementById('aba-dashboard')?.classList.add('active');
-          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\'dashboard\')"]')?.classList.add('active');
-          aplicarEstadoAutenticacao();
-          await concluirLogin(session.user);
+          const userId = session.user.id;
+          if (usuarioLogado?.id && usuarioLogado.id !== userId) {
+            loginGeneration++;
+            loginInFlight = null;
+            usuarioLogado = null; pacientes = []; censoInternados = {}; dadosAgregadosConvidado = null;
+            document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn => { btn.classList.remove('active'); btn.style.display = ''; });
+            document.querySelectorAll('.tab-pane').forEach(pane => { pane.classList.remove('active'); delete pane.dataset.restricted; });
+            document.getElementById('aba-dashboard')?.classList.add('active');
+            document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
+            aplicarEstadoAutenticacao();
+          }
+          // O fluxo de login manual e o listener compartilham a mesma promessa.
+          // Adia a chamada para fora do callback síncrono do Supabase.
+          setTimeout(() => {
+            if (supabaseClient.auth && session?.user?.id === userId) concluirLogin(session.user).catch(err => console.error('Falha ao concluir login:', err));
+          }, 0);
         } else if (event === 'SIGNED_OUT') {
-          loginGeneration++; loginInFlight=null;
-          usuarioLogado=null; pacientes=[]; censoInternados={}; dadosAgregadosConvidado=null;
-          document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn=>{btn.style.display='';btn.classList.remove('active');});
-          document.querySelectorAll('.tab-pane').forEach(pane=>{pane.classList.remove('active');delete pane.dataset.restricted;});
+          loginGeneration++;
+          loginInFlight = null;
+          usuarioLogado = null; pacientes = []; censoInternados = {}; dadosAgregadosConvidado = null;
+          document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn => { btn.style.display = ''; btn.classList.remove('active'); });
+          document.querySelectorAll('.tab-pane').forEach(pane => { pane.classList.remove('active'); delete pane.dataset.restricted; });
           document.getElementById('aba-dashboard')?.classList.add('active');
-          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\'dashboard\')"]')?.classList.add('active');
+          document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
           aplicarEstadoAutenticacao();
         }
       });
