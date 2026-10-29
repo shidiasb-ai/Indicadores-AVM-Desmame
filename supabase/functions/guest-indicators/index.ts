@@ -101,7 +101,9 @@ Deno.serve(async (req) => {
       const p = row?.dados || {};
       const iot = isoDate(p.dataIOT);
       const outcomeDate = isoDate(p.dataDesfecho);
-      if (startDate && iot && iot < startDate && (!outcomeDate || outcomeDate < startDate)) continue;
+      // Mantém o mesmo critério de coorte do dashboard principal:
+      // pacientes iniciados antes do período só são excluídos se já tinham desfecho antes do início.
+      if (startDate && iot && iot < startDate && outcomeDate && outcomeDate < startDate) continue;
       if (endDate && iot && iot > endDate) continue;
       const sector = String(p.setor || "NÃO INFORMADO").trim().slice(0, 80) || "NÃO INFORMADO";
       const s = ensure(sector);
