@@ -70,11 +70,17 @@ Deno.serve(async (req) => {
     const endDate = end || new Date().toISOString().slice(0, 10);
     const span = Math.max(1, (daysBetween(startDate, endDate) ?? 0) + 1);
     const stats: Record<string, any> = {};
+    const daily: Record<string, { data: string; avm: number; internados: number }> = {};
+    for (let t = new Date(startDate + "T00:00:00Z"); t <= new Date(endDate + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + 1)) {
+      const day = t.toISOString().slice(0, 10);
+      daily[day] = { data: day, avm: 0, internados: Object.values(CAPACIDADE_SETORES).reduce((sum, n) => sum + n, 0) };
+    }
     const ensure = (sector: string) => {
       if (!stats[sector]) stats[sector] = {
         setor: sector, total: 0, diasAVM: 0, internadosDia: (CAPACIDADE_SETORES[sector] || 10) * span,
-        totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0,
+        totExt: 0, totRetot: 0, falhas48h: 0, programada: 0, autoextubacao: 0, acidental: 0,
         tqt: 0, obitos: 0, diasIOTTQT: 0, qtdIOTTQT: 0,
+        desfechos: { ativos: 0, sucesso: 0, transferencia: 0, obitos: 0 },
       };
       return stats[sector];
     };
@@ -83,7 +89,9 @@ Deno.serve(async (req) => {
       if (!inside(date, startDate, endDate) || !row.dados || typeof row.dados !== "object") continue;
       for (const [sector, value] of Object.entries(row.dados)) {
         const s = ensure(sector);
-        s.internadosDia += Number(value) - (CAPACIDADE_SETORES[sector] || 10);
+        const correction = Number(value) - (CAPACIDADE_SETORES[sector] || 10);
+        s.internadosDia += correction;
+        if (daily[date]) daily[date].internados += correction;
       }
     }
 
@@ -98,20 +106,30 @@ Deno.serve(async (req) => {
       s.total += 1;
       s.diasAVM += Number(p.tempoAVM) || 0;
       const tqtDate = isoDate(p.dataTQT);
-      if (inside(tqtDate, startDate, endDate)) {
-        s.tqt += 1;
-        if (iot && tqtDate >= iot) {
-          s.diasIOTTQT += daysBetween(iot, tqtDate) || 0;
-          s.qtdIOTTQT += 1;
+      if (tqtDate) s.tqt += 1;
+      if (iot && tqtDate && tqtDate >= iot) {
+        s.diasIOTTQT += daysBetween(iot, tqtDate) || 0;
+        s.qtdIOTTQT += 1;
+      }
+      const outcome = String(p.desfecho || "").toUpperCase();
+      if (outcome === "ÓBITO") { s.obitos += 1; s.desfechos.obitos += 1; }
+      else if (outcome === "ATIVO") s.desfechos.ativos += 1;
+      else if (outcome === "EXTOT SEM FALHA" || outcome === "DECANULADO SEM FALHA") s.desfechos.sucesso += 1;
+      else if (outcome === "TRANSFERÊNCIA" || outcome === "ALTA HOSPITALAR") s.desfechos.transferencia += 1;
+      if (iot && inside(iot, startDate, endDate)) {
+        const stop = outcomeDate && outcomeDate < endDate ? outcomeDate : endDate;
+        for (let t = new Date(iot + "T00:00:00Z"); t <= new Date(stop + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + 1)) {
+          const day = t.toISOString().slice(0, 10);
+          if (daily[day]) daily[day].avm += 1;
         }
       }
-      if (String(p.desfecho || "").toUpperCase() === "ÓBITO") s.obitos += 1;
       if (Array.isArray(p.ciclos)) {
         for (const c of p.ciclos) {
           const extDate = isoDate(c?.dataExt);
           if (!inside(extDate, startDate, endDate)) continue;
           s.totExt += 1;
-          if (c.tipoExt === "AUTOEXTUBACAO") s.autoextubacao += 1;
+          if (c.tipoExt === "PROGRAMADA") s.programada += 1;
+          else if (c.tipoExt === "AUTOEXTUBACAO") s.autoextubacao += 1;
           else if (c.tipoExt === "ACIDENTAL") s.acidental += 1;
           if (c.teveRetot) {
             s.totRetot += 1;
@@ -126,7 +144,8 @@ Deno.serve(async (req) => {
       return {
         setor: s.setor, total: s.total, diasAVM: s.diasAVM, internadosDia: Math.max(0, s.internadosDia),
         totExt: s.totExt, totRetot: s.totRetot, falhas48h: s.falhas48h,
-        autoextubacao: s.autoextubacao, acidental: s.acidental, tqt: s.tqt, obitos: s.obitos,
+        programada: s.programada, autoextubacao: s.autoextubacao, acidental: s.acidental, tqt: s.tqt, obitos: s.obitos,
+        desfechos: s.desfechos,
         txUtilizacao: s.internadosDia > 0 ? Math.min(100, s.diasAVM / s.internadosDia * 100) : 0,
         txNaoProg: s.totExt > 0 ? nonProgrammed / s.totExt * 100 : 0,
         txSucesso: s.totExt > 0 ? (s.totExt - s.falhas48h) / s.totExt * 100 : 0,
@@ -150,9 +169,14 @@ Deno.serve(async (req) => {
     total.txTQT = total.total > 0 ? total.tqt / total.total * 100 : 0;
     total.txObito = total.total > 0 ? total.obitos / total.total * 100 : 0;
     total.mediaIOTTQT = total.qtdIOTTQT > 0 ? total.diasIOTTQT / total.qtdIOTTQT : null;
+    total.desfechos = sectors.reduce((a: any, s: any) => {
+      for (const k of ["ativos", "sucesso", "transferencia", "obitos"]) a[k] += Number(s.desfechos?.[k]) || 0;
+      return a;
+    }, { ativos: 0, sucesso: 0, transferencia: 0, obitos: 0 });
+    const evolucaoDiaria = Object.values(daily).map(d => ({ ...d, internados: Math.max(0, d.internados) }));
 
     // Apenas valores agregados são retornados. Nenhum nome, registro, app_id ou linha individual sai da função.
-    return json({ ok: true, dataInicio: startDate, dataFim: endDate, setores: sectors, total });
+    return json({ ok: true, dataInicio: startDate, dataFim: endDate, setores: sectors, total, evolucaoDiaria });
   } catch (e) {
     console.error("guest-indicators error", e);
     return json({ error: "Falha ao gerar os indicadores agregados." }, 500);
