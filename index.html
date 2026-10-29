@@ -2610,6 +2610,7 @@
         stats[s] = {
           total: 0,
           diasAVM: 0,
+          internadosDia: 0,
           totExt: 0,
           totRetot: 0,
           falhas48h: 0,
@@ -2618,6 +2619,17 @@
           tqt: 0,
           obitos: 0
         };
+      });
+
+      // Internados-Dia: somar somente os censos reais registrados no período, por setor.
+      Object.keys(censoInternados || {}).forEach(dia => {
+        if ((dtInicio && dia < dtInicio) || (dtFim && dia > dtFim)) return;
+        SETORES_ATIVOS.forEach(setor => {
+          const valor = censoInternados[dia]?.[setor];
+          if (valor !== undefined && valor !== null && valor !== '') {
+            stats[setor].internadosDia += Math.max(0, Number(valor) || 0);
+          }
+        });
       });
 
       const pacientesPeriodo = pacientes.filter(p => {
@@ -2666,8 +2678,8 @@
 
       SETORES_ATIVOS.forEach(set => {
         const item = stats[set] || { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
-        const cap = (CAPACIDADE_SETORES[set] || 10) * 27;
-        const txUtilizacao = cap > 0 ? ((item.diasAVM / cap) * 100).toFixed(1) + '%' : '-';
+        const internadosDia = item.internadosDia || 0;
+        const txUtilizacao = internadosDia > 0 ? ((item.diasAVM / internadosDia) * 100).toFixed(1) + '%' : '—';
 
         const totNaoProg = item.autoextubacao + item.acidental;
         const txNaoProg = item.totExt > 0 ? ((totNaoProg / item.totExt) * 100).toFixed(1) + '%' : '0.0%';
@@ -2679,7 +2691,7 @@
             <td><strong>${set}</strong></td>
             <td>${item.total}</td>
             <td>${item.diasAVM} d</td>
-            <td>${cap} d</td>
+            <td>${internadosDia} d</td>
             <td><strong style="color: var(--primary);">${txUtilizacao}</strong></td>
             <td><strong>${item.totExt}</strong></td>
             <td><strong style="color: var(--danger);">${item.totRetot}</strong></td>
