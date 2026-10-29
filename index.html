@@ -2175,6 +2175,7 @@
         }
 
         if (p.desfecho === 'ÓBITO') statsPorSetor[s].obitos++;
+        if (p.dataTQT && p.dataTQT !== '') statsPorSetor[s].tqt++;
       });
 
       // Tempo IOT–TQT e total de TQT: considerar a data da TQT no período selecionado,
@@ -2184,7 +2185,6 @@
         if (dtInicio && p.dataTQT < dtInicio) return;
         if (dtFim && p.dataTQT > dtFim) return;
         const item = statsPorSetor[p.setor];
-        item.tqt++;
         const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
         if (diasIOTTQT !== null) {
           item.diasIOTTQT = (item.diasIOTTQT || 0) + diasIOTTQT;
