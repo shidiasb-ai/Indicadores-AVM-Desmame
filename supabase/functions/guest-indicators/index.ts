@@ -73,11 +73,11 @@ Deno.serve(async (req) => {
     const daily: Record<string, { data: string; avm: number; internados: number }> = {};
     for (let t = new Date(startDate + "T00:00:00Z"); t <= new Date(endDate + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + 1)) {
       const day = t.toISOString().slice(0, 10);
-      daily[day] = { data: day, avm: 0, internados: Object.values(CAPACIDADE_SETORES).reduce((sum, n) => sum + n, 0) };
+      daily[day] = { data: day, avm: 0, internados: 0 };
     }
     const ensure = (sector: string) => {
       if (!stats[sector]) stats[sector] = {
-        setor: sector, total: 0, diasAVM: 0, internadosDia: (CAPACIDADE_SETORES[sector] || 10) * span,
+        setor: sector, total: 0, diasAVM: 0, internadosDia: 0,
         totExt: 0, totRetot: 0, falhas48h: 0, programada: 0, autoextubacao: 0, acidental: 0,
         tqt: 0, obitos: 0, diasIOTTQT: 0, qtdIOTTQT: 0,
         desfechos: { ativos: 0, sucesso: 0, transferencia: 0, obitos: 0 },
@@ -91,9 +91,9 @@ Deno.serve(async (req) => {
       if (!inside(date, startDate, endDate) || !row.dados || typeof row.dados !== "object") continue;
       for (const [sector, value] of Object.entries(row.dados)) {
         const s = ensure(sector);
-        const correction = Number(value) - (CAPACIDADE_SETORES[sector] || 10);
-        s.internadosDia += correction;
-        if (daily[date]) daily[date].internados += correction;
+        const count = Math.max(0, Number(value) || 0);
+        s.internadosDia += count;
+        if (daily[date]) daily[date].internados += count;
       }
     }
 
