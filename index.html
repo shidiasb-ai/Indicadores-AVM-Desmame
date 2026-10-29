@@ -3607,38 +3607,9 @@
       aplicarEstadoAutenticacao();
       // Registrar o listener antes de consultar a sessão para não perder eventos de autenticação.
       supabaseClient.auth.onAuthStateChange((event, session) => {
-        // Não aguardar operações do Supabase dentro do callback de autenticação:
-        // isso pode prender o lock interno e provocar piscadas/repetidas tentativas de login.
-        if (event === 'SIGNED_IN' && session?.user && session.user.id !== usuarioLogado?.id) {
-          const userId = session.user.id;
-          if (usuarioLogado?.id && usuarioLogado.id !== userId) {
-            loginGeneration++;
-            loginInFlight = null;
-            usuarioLogado = null; pacientes = []; censoInternados = {}; dadosAgregadosConvidado = null;
-            document.querySelectorAll('.tabs-nav .tab-btn').forEach(btn => { btn.classList.remove('active'); btn.style.display = ''; });
-            document.querySelectorAll('.tab-pane').forEach(pane => { pane.classList.remove('active'); delete pane.dataset.restricted; });
-            document.getElementById('aba-dashboard')?.classList.add('active');
-            document.querySelector('.tabs-nav .tab-btn[onclick="irParaAba(\\'dashboard\\')"]')?.classList.add('active');
-            aplicarEstadoAutenticacao();
-          }
-          // O fluxo de login manual e o listener compartilham a mesma promessa.
-          // Adia a chamada para fora do callback síncrono do Supabase.
-          setTimeout(() => {
-            // O login manual já pode ter concluído o carregamento antes deste callback.
-            // Não reinicializar a aplicação para o mesmo usuário: isso causava piscadas e corridas.
-            if (supabaseClient.auth && session?.user?.id === userId && usuarioLogado?.id !== userId) {
-              concluirLogin(session.user).catch(err => {
-                console.error('Falha ao concluir login:', err);
-                const errBox = document.getElementById('loginErroMsg');
-                if (errBox) {
-                  errBox.textContent = 'Não foi possível concluir o acesso. Atualize a página e tente novamente.';
-                  errBox.style.display = 'block';
-                }
-                aplicarEstadoAutenticacao();
-              });
-            }
-          }, 0);
-        } else if (event === 'SIGNED_OUT') {
+        // O login manual é concluído exclusivamente por realizarLogin().
+        // Não processar SIGNED_IN aqui evita duas inicializações concorrentes.
+        if (event === 'SIGNED_OUT') {
           loginGeneration++;
           loginInFlight = null;
           usuarioLogado = null; pacientes = []; censoInternados = {}; dadosAgregadosConvidado = null;
