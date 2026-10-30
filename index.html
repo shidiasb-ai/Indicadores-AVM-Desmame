@@ -1962,7 +1962,7 @@
       const cDesc = vals.filter(s => s === 'DESCONEXÃO').length;
       const cRE = vals.filter(s => s === 'RE').length;
 
-      if (cAVM > 0) p.tempoAVM = cAVM;
+      if (cAVM > 0) p.tempoAVM = Math.max(Number(p.tempoAVM) || 0, cAVM);
       if (cDesc > 0) p.tempoDesc = cDesc;
       if (cRE > 0) p.tempoRE = cRE;
 
