@@ -478,15 +478,6 @@
           </div>
         </div>
 
-        <!-- CENSO DO SETOR (PACIENTES INTERNADOS) -->
-        <div style="background: var(--surface-subtle); padding: 12px; border-radius: var(--radius); margin-bottom: 14px;">
-          <div style="font-size: 0.8rem; font-weight: 700; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <span>Pacientes Internados no Setor nesta Data (Denominador da Tx. Utilização AVM):</span>
-            <button class="btn btn-primary" style="padding: 3px 8px; font-size: 0.72rem;" onclick="salvarCensoInternados()">Salvar Censo</button>
-          </div>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px;" id="gridCensoInternados"></div>
-        </div>
-
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
           <div style="display: flex; gap: 8px; align-items: center; font-size: 0.78rem;">
             <span>Apontamento do Dia:</span>
@@ -497,24 +488,7 @@
           <button class="btn btn-primary" onclick="irParaAba('admissao')">➕ Admitir Novo Paciente</button>
         </div>
 
-        <div class="table-box">
-          <table>
-            <thead>
-              <tr>
-                <th>Paciente / Leito</th>
-                <th>Setor</th>
-                <th>Data IOT</th>
-                <th>Dias AVM</th>
-                <th>Status no Dia</th>
-                <th>Apontar Status</th>
-                <th>Ciclos Extubação & RETOT</th>
-                <th>TQT / Decanul.</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody id="tabelaCensoCorpo"></tbody>
-          </table>
-        </div>
+        <div id="setoresCensoContainer" style="display: flex; flex-direction: column; gap: 14px;"></div>
       </div>
     </div>
 
@@ -1258,6 +1232,7 @@
 
     let pacientes = [];
     let censoInternados = {};
+    let setoresCensoRenderizados = [];
     let chartInst = {};
     let dadosAgregadosConvidado = null;
 
@@ -1317,6 +1292,12 @@
         await carregarDadosRemotos();
         const { data: current } = await supabaseClient.auth.getSession();
         if (generation !== loginGeneration || current?.session?.user?.id !== authUser.id) return;
+        try {
+          const corrigidos = await corrigirDiasAVMAtivosNoSupabase();
+          if (corrigidos > 0) console.info(`Dias de AVM recalculados para ${corrigidos} paciente(s) ativo(s) elegível(is).`);
+        } catch (erroCorrecao) {
+          console.warn('Não foi possível persistir a correção automática dos dias de AVM; os dados carregados foram mantidos em memória.', erroCorrecao);
+        }
       }
       atualizarSelectsDeSetores(); renderizarChipsSetores(); renderizarTudo();
       await carregarUsuariosSupabase(); renderizarTabelaUnidades();
@@ -1387,6 +1368,86 @@
 
     function formatarPercentualAgregado(valor) {
       return `${(Number(valor) || 0).toFixed(1)}%`;
+    }
+
+    // Datas são tratadas no fuso local e com contagem inclusiva (IOT = dia 1).
+    function obterDataLocalISO() {
+      const hoje = new Date();
+      const ano = hoje.getFullYear();
+      const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+      const dia = String(hoje.getDate()).padStart(2, '0');
+      return `${ano}-${mes}-${dia}`;
+    }
+
+    function contarDiasInclusivos(dataInicio, dataFim) {
+      if (!dataInicio || !dataFim) return null;
+      const a = String(dataInicio).slice(0, 10).match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+      const b = String(dataFim).slice(0, 10).match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+      if (!a || !b) return null;
+      const inicio = Date.UTC(Number(a[1]), Number(a[2]) - 1, Number(a[3]));
+      const fim = Date.UTC(Number(b[1]), Number(b[2]) - 1, Number(b[3]));
+      if (!Number.isFinite(inicio) || !Number.isFinite(fim) || fim < inicio) return null;
+      return Math.floor((fim - inicio) / 86400000) + 1;
+    }
+
+    function pacientePermiteCalculoDiretoPorIOT(p) {
+      if (!p || p.desfecho !== 'ATIVO' || (p.statusHoje && p.statusHoje !== 'AVM')) return false;
+      if (Array.isArray(p.ciclos) && p.ciclos.length > 0) return false;
+      const historico = Object.values(p.historico || {});
+      // Havendo RE/desconexão registrados, não presumimos dias ventilados nesses intervalos.
+      if (historico.some(status => status && status !== 'AVM')) return false;
+      return Boolean(p.dataIOT);
+    }
+
+    function calcularDiasAVMAtual(p, dataReferencia = obterDataLocalISO()) {
+      if (!p) return 0;
+      const historico = Object.values(p.historico || {});
+      const diasApontados = historico.filter(status => status === 'AVM').length;
+      let dias = Math.max(Number(p.tempoAVM) || 0, diasApontados);
+      if (pacientePermiteCalculoDiretoPorIOT(p)) {
+        const desdeIOT = contarDiasInclusivos(p.dataIOT, dataReferencia);
+        if (desdeIOT !== null) dias = Math.max(dias, desdeIOT);
+      }
+      return dias;
+    }
+
+    function atualizarDiasAVMDoPaciente(p) {
+      const dias = calcularDiasAVMAtual(p);
+      if (p && dias > (Number(p.tempoAVM) || 0)) p.tempoAVM = dias;
+      return dias;
+    }
+
+    // Corrige somente pacientes ativos em AVM contínua, sem ciclos ou interrupções documentadas.
+    // A atualização é por upsert dos pacientes alterados; nenhum registro é excluído.
+    async function corrigirDiasAVMAtivosNoSupabase() {
+      const alterados = [];
+      pacientes.forEach(p => {
+        const antes = Number(p.tempoAVM) || 0;
+        const depois = atualizarDiasAVMDoPaciente(p);
+        if (p.desfecho === 'ATIVO' && depois > antes) alterados.push(p);
+      });
+      if (!alterados.length || !usuarioLogado || usuarioLogado.perfil === 'convidado') return 0;
+
+      const rows = alterados.map(p => ({
+        app_id: String(p.id),
+        identificador: String(p.id),
+        nome: p.nome || null,
+        registro: p.registro || null,
+        setor: p.setor || null,
+        data_admissao: p.dataAdm || null,
+        data_iot: p.dataIOT || null,
+        data_tqt: p.dataTQT || null,
+        data_decanulacao: p.dataDecanul || null,
+        desfecho: p.desfecho || null,
+        data_desfecho: p.dataDesfecho || null,
+        status_atual: p.statusHoje || null,
+        dados: p
+      }));
+      for (let i = 0; i < rows.length; i += 500) {
+        const { error } = await supabaseClient.from('pacientes').upsert(rows.slice(i, i + 500), { onConflict: 'app_id' });
+        if (error) throw error;
+      }
+      return alterados.length;
     }
 
     function renderizarDashboardConvidado(data) {
@@ -1620,17 +1681,22 @@
       }
     }
 
-    async function salvarCensoStorage() {
-      if (!usuarioLogado || usuarioLogado.perfil === 'convidado') return;
+    async function salvarCensoStorage(dataRonda = null) {
+      if (!usuarioLogado || usuarioLogado.perfil === 'convidado') return false;
       try {
-        const rows = Object.entries(censoInternados).map(([data_ronda, dados]) => ({ data_ronda, dados }));
+        const entradas = dataRonda
+          ? [[dataRonda, censoInternados[dataRonda]]]
+          : Object.entries(censoInternados);
+        const rows = entradas.filter(([, dados]) => dados).map(([data_ronda, dados]) => ({ data_ronda, dados }));
         if (rows.length) {
           const { error } = await supabaseClient.from('censo_rondas').upsert(rows, { onConflict: 'data_ronda' });
           if (error) throw error;
         }
+        return true;
       } catch (err) {
         console.error('Erro ao salvar censo no Supabase:', err);
-        alert('Não foi possível salvar a ronda no banco. Confira a migração SQL e as políticas RLS.');
+        alert('Não foi possível salvar o censo deste setor. Os demais setores e seus registros não foram removidos.');
+        return false;
       }
     }
 
@@ -1760,131 +1826,126 @@
       atualizarDashboard();
     }
 
-    function renderizarCamposCensoInternados() {
-      const dt = document.getElementById('dataRonda').value || '2026-10-27';
-      const container = document.getElementById('gridCensoInternados');
-      container.innerHTML = '';
-
-      const censoDoDia = censoInternados[dt] || null;
-
-      SETORES_ATIVOS.forEach(set => {
-        const val = censoDoDia && censoDoDia[set] !== undefined ? censoDoDia[set] : '';
-        container.innerHTML += `
-          <div style="background: var(--surface); padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; gap: 2px;">
-            <span style="font-size: 0.68rem; font-weight: 700; color: var(--text-muted);">${set}</span>
-            <input type="number" min="0" max="60" id="censo_inp_${set.replace(/\s+/g, '_')}" class="form-ctrl" style="padding: 4px; font-weight: 700; text-align: center;" value="${val}">
-          </div>
-        `;
-      });
-    }
-
-    function salvarCensoInternados() {
-      const dt = document.getElementById('dataRonda').value || '2026-10-27';
+    function salvarCensoInternados(indiceSetor, botao) {
+      const dt = document.getElementById('dataRonda').value || obterDataLocalISO();
+      const setor = setoresCensoRenderizados[indiceSetor];
+      const inp = document.getElementById(`censo_inp_${indiceSetor}`);
+      if (!setor || !inp) {
+        alert('Não foi possível identificar o setor deste censo. Atualize a tela e tente novamente.');
+        return;
+      }
       if (!censoInternados[dt]) censoInternados[dt] = {};
+      const valorInformado = inp.value.trim() === '' ? 0 : Math.max(0, parseInt(inp.value, 10) || 0);
+      // Atualiza somente o setor selecionado; os demais valores da mesma data são preservados.
+      censoInternados[dt] = { ...censoInternados[dt], [setor]: valorInformado };
 
-      SETORES_ATIVOS.forEach(set => {
-        const inp = document.getElementById(`censo_inp_${set.replace(/\s+/g, '_')}`);
-        if (inp) {
-          censoInternados[dt][set] = parseInt(inp.value, 10) || 0;
+      if (botao) { botao.disabled = true; botao.textContent = 'Salvando...'; }
+      salvarCensoStorage(dt).then(salvo => {
+        if (salvo) {
+          alert(`Censo de ${setor} salvo para ${formatarData(dt)}: ${valorInformado} paciente(s).`);
+          atualizarDashboard();
+          calcularAbaDados();
         }
+      }).finally(() => {
+        if (botao) { botao.disabled = false; botao.textContent = `Salvar censo • ${setor}`; }
       });
-
-      salvarCensoStorage();
-      alert(`Censo de pacientes internados salvo para a data ${formatarData(dt)}!`);
-      atualizarDashboard();
-      calcularAbaDados();
     }
 
     function renderizarCenso() {
-      renderizarCamposCensoInternados();
-      const tbody = document.getElementById('tabelaCensoCorpo');
-      tbody.innerHTML = '';
-      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
-
+      const container = document.getElementById('setoresCensoContainer');
+      if (!container) return;
+      const dataRonda = document.getElementById('dataRonda').value || obterDataLocalISO();
       const ativos = pacientes.filter(p => p.desfecho === 'ATIVO');
 
-      if (ativos.length === 0) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">
-              Todos os leitos estão liberados. Cadastre uma nova admissão na aba "+ Cadastrar Paciente".
-            </td>
-          </tr>
-        `;
+      const setoresExibidos = [...SETORES_ATIVOS];
+      ativos.forEach(p => {
+        const setorPaciente = p.setor || 'SEM SETOR';
+        if (!setoresExibidos.includes(setorPaciente)) setoresExibidos.push(setorPaciente);
+      });
+      setoresCensoRenderizados = setoresExibidos;
+
+      if (setoresExibidos.length === 0) {
+        container.innerHTML = '<div class="card" style="text-align:center;color:var(--text-muted);">Nenhum setor cadastrado.</div>';
         return;
       }
 
-      ativos.forEach(p => {
-        const realIdx = pacientes.indexOf(p);
-        const statusNaData = (p.historico && p.historico[dataRonda]) ? p.historico[dataRonda] : (p.statusHoje || 'AVM');
-        const badgeClass = statusNaData === 'AVM' ? 'b-avm' : (statusNaData === 'RE' ? 'b-re' : 'b-desc');
+      container.innerHTML = setoresExibidos.map((setor, indiceSetor) => {
+        const pacientesSetor = ativos.filter(p => (p.setor || 'SEM SETOR') === setor);
+        const valorCenso = censoInternados[dataRonda]?.[setor] !== undefined
+          ? censoInternados[dataRonda][setor]
+          : '';
+        const linhas = pacientesSetor.map(p => {
+          const realIdx = pacientes.indexOf(p);
+          const statusNaData = (p.historico && p.historico[dataRonda]) ? p.historico[dataRonda] : (p.statusHoje || 'AVM');
+          const badgeClass = statusNaData === 'AVM' ? 'b-avm' : (statusNaData === 'RE' ? 'b-re' : 'b-desc');
+          const diasAVM = atualizarDiasAVMDoPaciente(p);
+          const qtdExt = p.ciclos ? p.ciclos.length : 0;
+          const qtdRetot = p.ciclos ? p.ciclos.filter(c => c.teveRetot).length : 0;
 
-        let diasAVM = p.tempoAVM || 0;
-        if (p.historico) {
-          const arr = Object.values(p.historico);
-          const cAVM = arr.filter(s => s === 'AVM').length;
-          if (cAVM > 0) diasAVM = Math.max(diasAVM, cAVM);
-        }
-
-        const qtdExt = p.ciclos ? p.ciclos.length : 0;
-        const qtdRetot = p.ciclos ? p.ciclos.filter(c => c.teveRetot).length : 0;
-
-        let badgeCiclos = `<span class="badge" style="background:var(--surface-subtle);color:var(--text-muted);">Sem extubação</span>`;
-        if (qtdExt > 0) {
-          badgeCiclos = `
-            <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">
-              <span class="badge b-re">${qtdExt}ª Extub.</span>
-              ${qtdRetot > 0 ? `<span class="badge b-avm">${qtdRetot} RETOT(s)</span>` : '<span class="badge b-re">Sem RETOT</span>'}
-            </div>
-          `;
-        }
-
-        let tagsTQT = [];
-        if (p.dataTQT) tagsTQT.push(`<span class="badge b-purple" title="TQT em ${formatarData(p.dataTQT)}">TQT</span>`);
-        if (p.dataDecanul) tagsTQT.push(`<span class="badge b-info" title="Decanulado em ${formatarData(p.dataDecanul)}">Decanul.</span>`);
-
-        tbody.innerHTML += `
-          <tr>
-            <td>
-              <strong>${p.nome}</strong>
-              <div style="font-size: 0.72rem; color: var(--text-muted);">Pront: ${p.registro || 'S/N'}</div>
-            </td>
-            <td><span class="badge b-info">${p.setor}</span></td>
-            <td>${formatarData(p.dataIOT)}</td>
-            <td><strong style="color: var(--danger);">${diasAVM} d</strong></td>
-            <td><span class="badge ${badgeClass}">${statusNaData}</span></td>
-            <td>
-              <div style="display: flex; gap: 4px;">
-                <button class="btn" style="padding: 3px 6px; font-size: 0.72rem; ${statusNaData==='AVM'?'background:var(--danger);color:#fff;border-color:transparent;':''}" onclick="apontarStatus(${realIdx}, 'AVM')">AVM</button>
-                <button class="btn" style="padding: 3px 6px; font-size: 0.72rem; ${statusNaData==='DESCONEXÃO'?'background:var(--warning);color:#fff;border-color:transparent;':''}" onclick="apontarStatus(${realIdx}, 'DESCONEXÃO')">Desc.</button>
-                <button class="btn" style="padding: 3px 6px; font-size: 0.72rem; ${statusNaData==='RE'?'background:var(--success);color:#fff;border-color:transparent;':''}" onclick="apontarStatus(${realIdx}, 'RE')">RE</button>
+          let badgeCiclos = `<span class="badge" style="background:var(--surface-subtle);color:var(--text-muted);">Sem extubação</span>`;
+          if (qtdExt > 0) {
+            badgeCiclos = `
+              <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">
+                <span class="badge b-re">${qtdExt}ª Extub.</span>
+                ${qtdRetot > 0 ? `<span class="badge b-avm">${qtdRetot} RETOT(s)</span>` : '<span class="badge b-re">Sem RETOT</span>'}
               </div>
-            </td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 4px;">
+            `;
+          }
+
+          const tagsTQT = [];
+          if (p.dataTQT) tagsTQT.push(`<span class="badge b-purple" title="TQT em ${formatarData(p.dataTQT)}">TQT</span>`);
+          if (p.dataDecanul) tagsTQT.push(`<span class="badge b-info" title="Decanulado em ${formatarData(p.dataDecanul)}">Decanul.</span>`);
+
+          return `
+            <tr>
+              <td><strong>${p.nome}</strong><div style="font-size:0.72rem;color:var(--text-muted);">Pront: ${p.registro || 'S/N'}</div></td>
+              <td><span class="badge b-info">${p.setor || 'SEM SETOR'}</span></td>
+              <td>${formatarData(p.dataIOT)}</td>
+              <td><strong style="color:var(--danger);">${diasAVM} d</strong></td>
+              <td><span class="badge ${badgeClass}">${statusNaData}</span></td>
+              <td><div style="display:flex;gap:4px;">
+                <button class="btn" style="padding:3px 6px;font-size:0.72rem;${statusNaData==='AVM'?'background:var(--danger);color:#fff;border-color:transparent;':''}" onclick="apontarStatus(${realIdx}, 'AVM')">AVM</button>
+                <button class="btn" style="padding:3px 6px;font-size:0.72rem;${statusNaData==='DESCONEXÃO'?'background:var(--warning);color:#fff;border-color:transparent;':''}" onclick="apontarStatus(${realIdx}, 'DESCONEXÃO')">Desc.</button>
+                <button class="btn" style="padding:3px 6px;font-size:0.72rem;${statusNaData==='RE'?'background:var(--success);color:#fff;border-color:transparent;':''}" onclick="apontarStatus(${realIdx}, 'RE')">RE</button>
+              </div></td>
+              <td><div style="display:flex;flex-direction:column;gap:4px;">
                 ${badgeCiclos}
-                <button class="btn" style="padding: 3px 6px; font-size: 0.7rem;" onclick="abrirModalCiclos(${realIdx})">
-                  🫁 Gerenciar Ciclos (${qtdExt})
-                </button>
-              </div>
-            </td>
-            <td>
-              <div style="display: flex; flex-direction: column; gap: 3px;">
-                <div style="display:flex; gap:3px;">${tagsTQT.join('') || '<span style="color:var(--text-muted);font-size:0.7rem;">-</span>'}</div>
-                <div style="display: flex; gap: 3px;">
-                  <button class="btn" style="padding: 2px 5px; font-size: 0.68rem;" onclick="abrirModalTQT(${realIdx}, 'tqt')">TQT</button>
-                  <button class="btn" style="padding: 2px 5px; font-size: 0.68rem;" onclick="abrirModalTQT(${realIdx}, 'decanul')">Decanul.</button>
+                <button class="btn" style="padding:3px 6px;font-size:0.7rem;" onclick="abrirModalCiclos(${realIdx})">🫁 Gerenciar Ciclos (${qtdExt})</button>
+              </div></td>
+              <td><div style="display:flex;flex-direction:column;gap:3px;">
+                <div style="display:flex;gap:3px;">${tagsTQT.join('') || '<span style="color:var(--text-muted);font-size:0.7rem;">-</span>'}</div>
+                <div style="display:flex;gap:3px;">
+                  <button class="btn" style="padding:2px 5px;font-size:0.68rem;" onclick="abrirModalTQT(${realIdx}, 'tqt')">TQT</button>
+                  <button class="btn" style="padding:2px 5px;font-size:0.68rem;" onclick="abrirModalTQT(${realIdx}, 'decanul')">Decanul.</button>
                 </div>
+              </div></td>
+              <td><button class="btn btn-danger" style="padding:4px 8px;font-size:0.72rem;" onclick="abrirModalDesfecho(${realIdx})">🚪 Liberar Leito</button></td>
+            </tr>
+          `;
+        }).join('');
+
+        return `
+          <section class="card" style="border-left:4px solid var(--primary);">
+            <div class="card-head" style="align-items:flex-start;gap:12px;flex-wrap:wrap;">
+              <div><h3 class="card-title">${setor}</h3><p style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;">${pacientesSetor.length} paciente(s) ativo(s) neste setor</p></div>
+              <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;background:var(--surface-subtle);padding:10px;border-radius:var(--radius);">
+                <div class="form-group" style="margin:0;min-width:190px;">
+                  <label style="font-size:0.72rem;">Pacientes Internados no Setor nesta Data (Denominador da Tx. Utilização AVM)</label>
+                  <input type="number" min="0" max="60" id="censo_inp_${indiceSetor}" class="form-ctrl" style="padding:6px;font-weight:700;text-align:center;" value="${valorCenso}">
+                </div>
+                <button class="btn btn-primary" style="padding:7px 12px;font-size:0.75rem;" onclick="salvarCensoInternados(${indiceSetor}, this)">Salvar censo • ${setor}</button>
               </div>
-            </td>
-            <td>
-              <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.72rem;" onclick="abrirModalDesfecho(${realIdx})">
-                🚪 Liberar Leito
-              </button>
-            </td>
-          </tr>
+            </div>
+            <div class="table-box"><table>
+              <thead><tr>
+                <th>Paciente / Leito</th><th>Setor</th><th>Data IOT</th><th>Dias AVM</th><th>Status no Dia</th>
+                <th>Apontar Status</th><th>Ciclos Extubação & RETOT</th><th>TQT / Decanul.</th><th>Ações</th>
+              </tr></thead>
+              <tbody>${linhas || `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">Nenhum paciente ativo neste setor nesta data.</td></tr>`}</tbody>
+            </table></div>
+          </section>
         `;
-      });
+      }).join('');
     }
 
     function apontarStatus(realIdx, novoStatus) {
@@ -2170,7 +2231,7 @@
       pacFiltrados.forEach(p => {
         const s = statsPorSetor[p.setor] ? p.setor : setoresFiltro[0];
         statsPorSetor[s].totalPacientes++;
-        statsPorSetor[s].diasAVM += Number(p.tempoAVM) || 0;
+        statsPorSetor[s].diasAVM += atualizarDiasAVMDoPaciente(p);
 
         if (p.ciclos && p.ciclos.length > 0) {
           p.ciclos.forEach(c => {
@@ -2669,7 +2730,7 @@
           stats[s] = { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
         }
         stats[s].total++;
-        stats[s].diasAVM += Number(p.tempoAVM) || 0;
+        stats[s].diasAVM += atualizarDiasAVMDoPaciente(p);
 
         if (p.ciclos && p.ciclos.length > 0) {
           p.ciclos.forEach(c => {
@@ -3329,6 +3390,19 @@
         tempoDesc: pExistente ? pExistente.tempoDesc : 0,
         tempoRE: pExistente ? pExistente.tempoRE : 0
       };
+
+      if (novo.desfecho === 'ATIVO' && novo.statusHoje === 'AVM' &&
+          (!novo.ciclos || novo.ciclos.length === 0) &&
+          !Object.values(novo.historico || {}).some(status => status && status !== 'AVM')) {
+        const diasDesdeIOT = contarDiasInclusivos(novo.dataIOT, obterDataLocalISO());
+        const diasHistorico = Object.values(novo.historico || {}).filter(status => status === 'AVM').length;
+        if (diasDesdeIOT !== null) {
+          const dataIOTFoiCorrigida = pExistente && pExistente.dataIOT !== novo.dataIOT;
+          novo.tempoAVM = dataIOTFoiCorrigida
+            ? Math.max(diasDesdeIOT, diasHistorico)
+            : Math.max(Number(novo.tempoAVM) || 0, diasDesdeIOT, diasHistorico);
+        }
+      }
 
       if (idx >= 0) pacientes[idx] = novo;
       else pacientes.unshift(novo);
