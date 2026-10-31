@@ -2273,7 +2273,6 @@
         if(p.dataTQT&&(!dtInicio||p.dataTQT>=dtInicio)&&(!dtFim||p.dataTQT<=dtFim))statsPorSetor[s].tqt++;
         if(p.dataDecanul&&p.dataTQT&&(!dtInicio||p.dataDecanul>=dtInicio)&&(!dtFim||p.dataDecanul<=dtFim)){const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);if(dd!==null){statsPorSetor[s].diasTQTDecanul+=dd;statsPorSetor[s].qtdTQTDecanul++;}}
       });
-      });
 
       // Tempo IOT–TQT e total de TQT: considerar a data da TQT no período selecionado,
       // independentemente de a IOT ter ocorrido em período anterior.
@@ -2762,7 +2761,6 @@
           if(c.teveRetot){stats[s].totRetot++;if(c.falha48h)stats[s].falhas48h++;}
         });
         if(p.desfecho==='ÓBITO'&&p.dataDesfecho&&(!dtInicio||p.dataDesfecho>=dtInicio)&&(!dtFim||p.dataDesfecho<=dtFim))stats[s].obitos++;
-      });
       });
 
       // Indicador IOT–TQT: incluir casos pela data de realização da TQT no período.
