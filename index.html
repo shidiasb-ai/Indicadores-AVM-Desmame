@@ -1446,7 +1446,9 @@
       return estado;
     }
     function pacienteEmAVMNaData(p,dia,inicio=obterInicioAVMNoSetor(p)) {
-      if(!inicio||dia<inicio)return false;
+      if(!inicio||dia<inicio||dia>obterDataLocalISO())return false;
+      const fimClinico=p.desfecho&&p.desfecho!=='ATIVO'&&p.dataDesfecho?String(p.dataDesfecho).slice(0,10):'';
+      if(fimClinico&&dia>fimClinico)return false;
       const eventos=obterEventosAVM(p,inicio);
       return estadoAVMNoInicioDoDia(eventos,dia)||eventos.some(e=>e.data===dia&&e.avm);
     }
@@ -2266,6 +2268,7 @@
       setoresFiltro.forEach(s => {
         statsPorSetor[s] = {
           diasAVM: 0,
+          diasTotalAVM:0,
           totalPacientes: 0,
           naoProgNotificadas: 0, diasIOTExt: 0, qtdIOTExt: 0, diasTQTDecanul: 0, qtdTQTDecanul: 0,
           totExt: 0,
@@ -2286,6 +2289,7 @@
         const s = statsPorSetor[p.setor] ? p.setor : setoresFiltro[0];
         statsPorSetor[s].totalPacientes++;
         statsPorSetor[s].diasAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
+        statsPorSetor[s].diasTotalAVM += calcularTempoTotalAVM(p);
 
       });
       pacientes.forEach(p => {
@@ -2640,11 +2644,14 @@
         setores.includes(p.setor) && pacienteEmAVMNaData(p,dia)
       ).length);
       const valoresInternados = datasEvol.map(dia => {
-        if (!censoInternados[dia]) return null;
-        return setores.reduce((sum, setor) => {
-          const valor = censoInternados[dia][setor];
-          return sum + (valor !== undefined && valor !== null && valor !== '' ? Math.max(0, Number(valor) || 0) : 0);
-        }, 0);
+        let total=0, completo=true;
+        setores.forEach(setor=>{
+          const valor=censoInternados[dia]?.[setor];
+          if(valor!==undefined&&valor!==null&&valor!=='')total+=Math.max(0,Number(valor)||0);
+          else if(dia<'2026-10-29')total+=10;
+          else completo=false;
+        });
+        return completo?total:null;
       });
 
       if (chartInst.evolucao) chartInst.evolucao.destroy();
