@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
       if (!stats[sector]) stats[sector] = {
         setor: sector, total: 0, pacientesAVM: 0, diasAVM: 0, avmDiasTaxa: 0,
         internadosDia: 0, diasComCenso: 0, totExt: 0, totRetot: 0, falhas48h: 0,
-        programada: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0,
+        programada: 0, autoextubacao: 0, acidental: 0, notificadas: 0, tqt: 0, obitos: 0,
         extAvaliaveis: 0, extSucesso: 0, extPendentes: 0,
         diasIOTTQT: 0, qtdIOTTQT: 0, diasIOTExt: 0, qtdIOTExt: 0,
         diasTQTDecanul: 0, qtdTQTDecanul: 0,
@@ -229,6 +229,7 @@ Deno.serve(async (req) => {
           if (c.tipoExt === "PROGRAMADA") s.programada++;
           else if (c.tipoExt === "AUTOEXTUBACAO") s.autoextubacao++;
           else if (c.tipoExt === "ACIDENTAL") s.acidental++;
+          if ((c.tipoExt === "AUTOEXTUBACAO" || c.tipoExt === "ACIDENTAL") && String(c.numeroNotificacao || "").trim()) s.notificadas++;
 
           if (c.teveRetot && ret) {
             const gap = daysBetween(ext, ret);
@@ -304,6 +305,8 @@ Deno.serve(async (req) => {
       totExt: s.totExt, totRetot: s.totRetot, falhas48h: s.falhas48h,
       extAvaliaveis: s.extAvaliaveis, extSucesso: s.extSucesso, extPendentes: s.extPendentes,
       programada: s.programada, autoextubacao: s.autoextubacao, acidental: s.acidental,
+      notificadas: s.notificadas,
+      txNotificadas: (s.autoextubacao + s.acidental) > 0 ? s.notificadas / (s.autoextubacao + s.acidental) * 100 : null,
       tqt: s.tqt, obitos: s.obitos, desfechos: s.desfechos,
       txUtilizacao: s.internadosDia > 0 ? s.avmDiasTaxa / s.internadosDia * 100 : null,
       txNaoProg: s.totExt > 0 ? (s.autoextubacao + s.acidental) / s.totExt * 100 : 0,
@@ -318,14 +321,15 @@ Deno.serve(async (req) => {
     })).sort((a: any, b: any) => a.setor.localeCompare(b.setor, "pt-BR"));
 
     const total = sectors.reduce((a: any, s: any) => {
-      for (const k of ["total", "pacientesAVM", "diasAVM", "internadosDia", "diasComCenso", "totExt", "totRetot", "falhas48h", "extAvaliaveis", "extSucesso", "extPendentes", "autoextubacao", "acidental", "tqt", "obitos", "qtdIOTTQT", "diasIOTExt", "qtdIOTExt", "diasTQTDecanul", "qtdTQTDecanul"]) a[k] += Number(s[k]) || 0;
+      for (const k of ["total", "pacientesAVM", "diasAVM", "internadosDia", "diasComCenso", "totExt", "totRetot", "falhas48h", "extAvaliaveis", "extSucesso", "extPendentes", "autoextubacao", "acidental", "notificadas", "tqt", "obitos", "qtdIOTTQT", "diasIOTExt", "qtdIOTExt", "diasTQTDecanul", "qtdTQTDecanul"]) a[k] += Number(s[k]) || 0;
       a.diasIOTTQT += (Number(s.mediaIOTTQT) || 0) * (Number(s.qtdIOTTQT) || 0);
       return a;
-    }, { total: 0, pacientesAVM: 0, diasAVM: 0, internadosDia: 0, diasComCenso: 0, totExt: 0, totRetot: 0, falhas48h: 0, extAvaliaveis: 0, extSucesso: 0, extPendentes: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0, qtdIOTTQT: 0, diasIOTTQT: 0, diasIOTExt: 0, qtdIOTExt: 0, diasTQTDecanul: 0, qtdTQTDecanul: 0 });
+    }, { total: 0, pacientesAVM: 0, diasAVM: 0, internadosDia: 0, diasComCenso: 0, totExt: 0, totRetot: 0, falhas48h: 0, extAvaliaveis: 0, extSucesso: 0, extPendentes: 0, autoextubacao: 0, acidental: 0, notificadas: 0, tqt: 0, obitos: 0, qtdIOTTQT: 0, diasIOTTQT: 0, diasIOTExt: 0, qtdIOTExt: 0, diasTQTDecanul: 0, qtdTQTDecanul: 0 });
     total.qtdPacientesAVM = total.pacientesAVM;
     total.mediaAVM = total.pacientesAVM > 0 ? total.diasAVM / total.pacientesAVM : null;
     total.txUtilizacao = total.internadosDia > 0 ? sectors.reduce((sum: number, s: any) => sum + (Number(s.txUtilizacao) || 0) * (Number(s.internadosDia) || 0) / 100, 0) / total.internadosDia * 100 : null;
     total.txNaoProg = total.totExt > 0 ? (total.autoextubacao + total.acidental) / total.totExt * 100 : 0;
+    total.txNotificadas = (total.autoextubacao + total.acidental) > 0 ? total.notificadas / (total.autoextubacao + total.acidental) * 100 : null;
     total.txSucesso = total.extAvaliaveis > 0 ? total.extSucesso / total.extAvaliaveis * 100 : null;
     total.txFalha = total.extAvaliaveis > 0 ? total.falhas48h / total.extAvaliaveis * 100 : null;
     total.txTQT = total.total > 0 ? total.tqt / total.total * 100 : 0;
