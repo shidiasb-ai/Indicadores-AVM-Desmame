@@ -136,6 +136,7 @@ Deno.serve(async (req) => {
         setor: sector, total: 0, pacientesAVM: 0, diasAVM: 0, avmDiasTaxa: 0,
         internadosDia: 0, diasComCenso: 0, totExt: 0, totRetot: 0, falhas48h: 0,
         programada: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0,
+        extAvaliaveis: 0, extSucesso: 0, extPendentes: 0,
         diasIOTTQT: 0, qtdIOTTQT: 0, diasIOTExt: 0, qtdIOTExt: 0,
         diasTQTDecanul: 0, qtdTQTDecanul: 0,
         desfechos: { ativos: 0, sucesso: 0, transferencia: 0, obitos: 0 },
@@ -231,7 +232,16 @@ Deno.serve(async (req) => {
 
           if (c.teveRetot && ret) {
             const gap = daysBetween(ext, ret);
-            if (gap !== null && gap >= 0 && gap <= 1) s.falhas48h++;
+            if (gap !== null && gap >= 0) {
+              s.extAvaliaveis++;
+              const failure = typeof c.falha48h === "boolean" ? c.falha48h : gap <= 1;
+              if (failure) s.falhas48h++;
+              else s.extSucesso++;
+            } else s.extPendentes++;
+          } else {
+            const followup = daysBetween(ext, today);
+            if (followup !== null && followup >= 2) { s.extAvaliaveis++; s.extSucesso++; }
+            else s.extPendentes++;
           }
           // Tempo IOT/RE-IOT até a extubação, usando o início do episódio correspondente.
           const priorRetot = retotDates.filter(d => d <= ext).sort().pop() || "";
@@ -292,12 +302,13 @@ Deno.serve(async (req) => {
       qtdPacientesAVM: s.pacientesAVM, internadosDia: s.internadosDia,
       diasComCenso: s.diasComCenso,
       totExt: s.totExt, totRetot: s.totRetot, falhas48h: s.falhas48h,
+      extAvaliaveis: s.extAvaliaveis, extSucesso: s.extSucesso, extPendentes: s.extPendentes,
       programada: s.programada, autoextubacao: s.autoextubacao, acidental: s.acidental,
       tqt: s.tqt, obitos: s.obitos, desfechos: s.desfechos,
       txUtilizacao: s.internadosDia > 0 ? s.avmDiasTaxa / s.internadosDia * 100 : null,
       txNaoProg: s.totExt > 0 ? (s.autoextubacao + s.acidental) / s.totExt * 100 : 0,
-      txSucesso: s.totExt > 0 ? Math.max(0, s.totExt - s.falhas48h) / s.totExt * 100 : 0,
-      txFalha: s.totExt > 0 ? s.falhas48h / s.totExt * 100 : 0,
+      txSucesso: s.extAvaliaveis > 0 ? s.extSucesso / s.extAvaliaveis * 100 : null,
+      txFalha: s.extAvaliaveis > 0 ? s.falhas48h / s.extAvaliaveis * 100 : null,
       txTQT: s.total > 0 ? s.tqt / s.total * 100 : 0,
       txObito: s.total > 0 ? s.obitos / s.total * 100 : 0,
       mediaIOTTQT: s.qtdIOTTQT > 0 ? s.diasIOTTQT / s.qtdIOTTQT : null,
@@ -307,16 +318,16 @@ Deno.serve(async (req) => {
     })).sort((a: any, b: any) => a.setor.localeCompare(b.setor, "pt-BR"));
 
     const total = sectors.reduce((a: any, s: any) => {
-      for (const k of ["total", "pacientesAVM", "diasAVM", "internadosDia", "diasComCenso", "totExt", "totRetot", "falhas48h", "autoextubacao", "acidental", "tqt", "obitos", "qtdIOTTQT"]) a[k] += Number(s[k]) || 0;
+      for (const k of ["total", "pacientesAVM", "diasAVM", "internadosDia", "diasComCenso", "totExt", "totRetot", "falhas48h", "extAvaliaveis", "extSucesso", "extPendentes", "autoextubacao", "acidental", "tqt", "obitos", "qtdIOTTQT"]) a[k] += Number(s[k]) || 0;
       a.diasIOTTQT += (Number(s.mediaIOTTQT) || 0) * (Number(s.qtdIOTTQT) || 0);
       return a;
-    }, { total: 0, pacientesAVM: 0, diasAVM: 0, internadosDia: 0, diasComCenso: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0, qtdIOTTQT: 0, diasIOTTQT: 0 });
+    }, { total: 0, pacientesAVM: 0, diasAVM: 0, internadosDia: 0, diasComCenso: 0, totExt: 0, totRetot: 0, falhas48h: 0, extAvaliaveis: 0, extSucesso: 0, extPendentes: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0, qtdIOTTQT: 0, diasIOTTQT: 0 });
     total.qtdPacientesAVM = total.pacientesAVM;
     total.mediaAVM = total.pacientesAVM > 0 ? total.diasAVM / total.pacientesAVM : null;
     total.txUtilizacao = total.internadosDia > 0 ? sectors.reduce((sum: number, s: any) => sum + (Number(s.txUtilizacao) || 0) * (Number(s.internadosDia) || 0) / 100, 0) / total.internadosDia * 100 : null;
     total.txNaoProg = total.totExt > 0 ? (total.autoextubacao + total.acidental) / total.totExt * 100 : 0;
-    total.txSucesso = total.totExt > 0 ? Math.max(0, total.totExt - total.falhas48h) / total.totExt * 100 : 0;
-    total.txFalha = total.totExt > 0 ? total.falhas48h / total.totExt * 100 : 0;
+    total.txSucesso = total.extAvaliaveis > 0 ? total.extSucesso / total.extAvaliaveis * 100 : null;
+    total.txFalha = total.extAvaliaveis > 0 ? total.falhas48h / total.extAvaliaveis * 100 : null;
     total.txTQT = total.total > 0 ? total.tqt / total.total * 100 : 0;
     total.txObito = total.total > 0 ? total.obitos / total.total * 100 : 0;
     total.mediaIOTTQT = total.qtdIOTTQT > 0 ? total.diasIOTTQT / total.qtdIOTTQT : null;
