@@ -1440,17 +1440,16 @@
       ev.sort((a,b)=>a.data.localeCompare(b.data)||a.ordem-b.ordem);
       return ev;
     }
-    function estadoAVMNoInicioDoDia(eventos,dia) {
+    function estadoAVMNaData(eventos,dia) {
       let estado=false;
-      eventos.forEach(e=>{if(e.data<dia)estado=e.avm;});
+      eventos.forEach(e=>{if(e.data<=dia)estado=e.avm;});
       return estado;
     }
     function pacienteEmAVMNaData(p,dia,inicio=obterInicioAVMNoSetor(p)) {
       if(!inicio||dia<inicio||dia>obterDataLocalISO())return false;
       const fimClinico=p.desfecho&&p.desfecho!=='ATIVO'&&p.dataDesfecho?String(p.dataDesfecho).slice(0,10):'';
       if(fimClinico&&dia>fimClinico)return false;
-      const eventos=obterEventosAVM(p,inicio);
-      return estadoAVMNoInicioDoDia(eventos,dia)||eventos.some(e=>e.data===dia&&e.avm);
+      return estadoAVMNaData(obterEventosAVM(p,inicio),dia);
     }
     function contarAVMDiasNoPeriodo(p,inicioPeriodo,fimPeriodo) {
       if(!p||!inicioPeriodo||!fimPeriodo||fimPeriodo<inicioPeriodo)return 0;
@@ -1462,7 +1461,7 @@
       const eventos=obterEventosAVM(p,inicioAVM);let total=0;
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
         const dia=d.toISOString().slice(0,10);
-        if(estadoAVMNoInicioDoDia(eventos,dia)||eventos.some(e=>e.data===dia&&e.avm))total++;
+        if(estadoAVMNaData(eventos,dia))total++;
       }
       return total;
     }
@@ -1574,7 +1573,7 @@
         const media = item.mediaIOTTQT == null ? '—' : `${Number(item.mediaIOTTQT).toFixed(1)} d`;
         tbody.innerHTML += `<tr>
           <td><strong>${escaparHtml(item.setor)}</strong></td>
-          <td>${item.total || 0}</td><td>${item.diasAVM || 0} d</td><td><strong>${item.mediaAVM==null?'—':Number(item.mediaAVM).toFixed(1)+' d'}</strong></td>
+          <td>${item.pacientesAVM || 0}</td><td>${item.diasAVM || 0} d</td><td><strong>${item.mediaAVM==null?'—':Number(item.mediaAVM).toFixed(1)+' d'}</strong></td>
           <td><strong>${formatarPercentualAgregado(item.txUtilizacao)}</strong></td>
           <td>${item.totExt || 0}</td><td>${item.totRetot || 0}</td><td>${item.falhas48h || 0}</td>
           <td>${formatarPercentualAgregado(item.txSucesso)}</td><td>${item.autoextubacao || 0}</td><td>${item.acidental || 0}</td>
