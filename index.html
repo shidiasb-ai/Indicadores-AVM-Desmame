@@ -1410,8 +1410,8 @@
 
     function contarDiasInclusivos(dataInicio, dataFim) {
       if (!dataInicio || !dataFim) return null;
-      const a = String(dataInicio).slice(0, 10).match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
-      const b = String(dataFim).slice(0, 10).match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+      const a = String(dataInicio).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const b = String(dataFim).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (!a || !b) return null;
       const inicio = Date.UTC(Number(a[1]), Number(a[2]) - 1, Number(a[3]));
       const fim = Date.UTC(Number(b[1]), Number(b[2]) - 1, Number(b[3]));
@@ -1422,7 +1422,7 @@
     function obterInicioAVMNoSetor(p) {
       if (!p) return '';
       const adm=String(p.dataAdm||'').slice(0,10), iot=String(p.dataIOT||'').slice(0,10);
-      const diasHistorico=Object.keys(p.historico||{}).filter(d=>/^\\d{4}-\\d{2}-\\d{2}$/.test(d)&&p.historico[d]==='AVM'&&(!adm||d>=adm)).sort();
+      const diasHistorico=Object.keys(p.historico||{}).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&p.historico[d]==='AVM'&&(!adm||d>=adm)).sort();
       if(iot&&(!adm||iot>=adm))return iot;
       if(adm)return diasHistorico[0]||'';
       return iot||diasHistorico[0]||'';
@@ -1430,12 +1430,12 @@
     function obterEventosAVM(p,inicio) {
       const ev=[{data:inicio,avm:true,ordem:0}];
       Object.entries(p?.historico||{}).forEach(([data,status])=>{
-        if(data>=inicio&&/^\\d{4}-\\d{2}-\\d{2}$/.test(data))ev.push({data,avm:status==='AVM',ordem:2});
+        if(data>=inicio&&/^\d{4}-\d{2}-\d{2}$/.test(data))ev.push({data,avm:status==='AVM',ordem:2});
       });
       (p?.ciclos||[]).forEach(c=>{
         const ext=String(c.dataExt||'').slice(0,10),ret=String(c.dataRetot||'').slice(0,10);
-        if(ext>=inicio&&/^\\d{4}-\\d{2}-\\d{2}$/.test(ext))ev.push({data:ext,avm:false,ordem:1});
-        if(c.teveRetot&&ret>=inicio&&/^\\d{4}-\\d{2}-\\d{2}$/.test(ret))ev.push({data:ret,avm:true,ordem:1});
+        if(ext>=inicio&&/^\d{4}-\d{2}-\d{2}$/.test(ext))ev.push({data:ext,avm:false,ordem:1});
+        if(c.teveRetot&&ret>=inicio&&/^\d{4}-\d{2}-\d{2}$/.test(ret))ev.push({data:ret,avm:true,ordem:1});
       });
       ev.sort((a,b)=>a.data.localeCompare(b.data)||a.ordem-b.ordem);
       return ev;
@@ -1477,16 +1477,20 @@
     function atualizarDiasAVMDoPaciente(p) {
       const dias=calcularDiasAVMAtual(p); if(p&&obterInicioAVMNoSetor(p))p.tempoAVM=dias; return dias;
     }
-    function somarInternadosDiaSetor(setor,inicio,fim) {
-      if(!inicio||!fim||fim<inicio)return null;
-      let total=0,completo=true;
+    function calcularBaseTaxaUtilizacaoAVM(setor,inicio,fim) {
+      const base={avmDias:0,internadosDia:0,diasComCenso:0};
+      if(!inicio||!fim||fim<inicio)return base;
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
         const dia=d.toISOString().slice(0,10),valor=censoInternados[dia]?.[setor];
-        if(valor!==undefined&&valor!==null&&valor!=='')total+=Math.max(0,Number(valor)||0);
-        else if(dia<'2026-10-29')total+=10;
-        else completo=false;
+        let ocupacao=null;
+        if(valor!==undefined&&valor!==null&&String(valor).trim()!==''){
+          const n=Number(valor);if(Number.isFinite(n)&&n>=0)ocupacao=n;
+        } else if(dia<'2026-10-29') ocupacao=10;
+        if(ocupacao===null)continue;
+        base.diasComCenso++;base.internadosDia+=ocupacao;
+        base.avmDias+=pacientes.filter(p=>p.setor===setor&&pacienteEmAVMNaData(p,dia)).length;
       }
-      return completo?total:null;
+      return base;
     }
 
     // Corrige somente pacientes ativos em AVM contínua, sem ciclos ou interrupções documentadas.
@@ -2285,13 +2289,18 @@
         };
       });
 
-      setoresFiltro.forEach(s=>{statsPorSetor[s].internadosDia=somarInternadosDiaSetor(s,dtInicio,dtFim);});
+      setoresFiltro.forEach(s=>{
+        const base=calcularBaseTaxaUtilizacaoAVM(s,dtInicio,dtFim);
+        statsPorSetor[s].internadosDia=base.internadosDia;
+        statsPorSetor[s].avmDiasTaxa=base.avmDias;
+        statsPorSetor[s].diasComCenso=base.diasComCenso;
+      });
 
       pacFiltrados.forEach(p => {
         const s = statsPorSetor[p.setor] ? p.setor : setoresFiltro[0];
         statsPorSetor[s].totalPacientes++;
         statsPorSetor[s].diasAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
-        statsPorSetor[s].diasTotalAVM += calcularTempoTotalAVM(p);
+        statsPorSetor[s].diasTotalAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
 
       });
       pacientes.forEach(p => {
@@ -2327,8 +2336,9 @@
 
       let globDiasAVM = 0;
       let globDiasTotalAVM=0;
+      let globAVMDiasTaxa=0;
+      let globDiasCenso=0;
       let globInternadosDia = 0;
-      let globOcupacaoCompleta=true;
       let globTotExt = 0;
       let globExtProg = 0;
       let globAutoExt = 0;
@@ -2343,8 +2353,9 @@
         const item = statsPorSetor[s];
         globDiasAVM += item.diasAVM;
         globDiasTotalAVM += item.diasTotalAVM;
-        if(item.internadosDia===null||item.internadosDia===undefined)globOcupacaoCompleta=false;
-        else globInternadosDia += item.internadosDia;
+        globAVMDiasTaxa+=item.avmDiasTaxa||0;
+        globDiasCenso+=item.diasComCenso||0;
+        globInternadosDia+=item.internadosDia||0;
         globTotExt += item.totExt;
         globExtProg += item.extProg;
         globAutoExt += item.autoExt;
@@ -2357,7 +2368,7 @@
         globDiasIOTExt+=item.diasIOTExt;globQtdIOTExt+=item.qtdIOTExt;globDiasTQTDecanul+=item.diasTQTDecanul;globQtdTQTDecanul+=item.qtdTQTDecanul;
       });
 
-      const globTxUtilizacao = globOcupacaoCompleta&&globInternadosDia>0 ? ((globDiasAVM/globInternadosDia)*100).toFixed(1) : '—';
+      const globTxUtilizacao = globDiasCenso>0&&globInternadosDia>0 ? ((globAVMDiasTaxa/globInternadosDia)*100).toFixed(1) : '—';
       const globTotNaoProg = globAutoExt + globAcidExt;
       const globTxNaoProg = globTotExt > 0 ? ((globTotNaoProg / globTotExt) * 100).toFixed(1) : '0.0';
       const globTxSucesso = globTotExt > 0 ? (((globTotExt - globFalhas48h) / globTotExt) * 100).toFixed(1) : '0.0';
@@ -2366,7 +2377,7 @@
       const globTxObito = pacFiltrados.length > 0 ? ((globObitos / pacFiltrados.length) * 100).toFixed(1) : '0.0';
 
       document.getElementById('dashTaxaUtilizacao').textContent = globTxUtilizacao==='—'?'—':`${globTxUtilizacao}%`;
-      document.getElementById('dashUtilizacaoSub').textContent = globOcupacaoCompleta?`${globDiasAVM} AVM-dias / ${globInternadosDia} internados-dias`:'Ocupação incompleta no período; taxa não calculada';
+      document.getElementById('dashUtilizacaoSub').textContent = globDiasCenso>0?`Base: ${globDiasCenso} dias com censo/estimativa válida • ${globAVMDiasTaxa} AVM-dias / ${globInternadosDia} internados-dias`:'Sem dias com censo válido no período';
 
       document.getElementById('dashTaxaNaoProg').textContent = `${globTxNaoProg}%`;
       document.getElementById('dashNaoProgSub').textContent = `${globTotNaoProg} de ${globTotExt} extubações`;
@@ -2381,7 +2392,7 @@
       document.getElementById('dashFalhaSub').textContent = `${globFalhas48h} falhas <48h`;
 
       document.getElementById('dashPacientesDia').textContent = `${globDiasAVM} d`;
-      document.getElementById('dashTempoMedioAVM').textContent=pacFiltrados.length?(globDiasTotalAVM/pacFiltrados.length).toFixed(1)+' d':'—';
+      document.getElementById('dashTempoMedioAVM').textContent=pacFiltrados.length?(globDiasAVM/pacFiltrados.length).toFixed(1)+' d':'—';
       document.getElementById('dashTempoMedioAVMSub').textContent=pacFiltrados.length?`Média de ${pacFiltrados.length} pacientes distintos com AVM no período`:'Sem pacientes com AVM no período';
       document.getElementById('dashTaxaTQT').textContent = `${globTxTQT}%`;
       document.getElementById('dashTQTSub').textContent = `${globTQT} traqueostomias`;
@@ -2432,7 +2443,7 @@
       const ctxUtil = document.getElementById('graficoUtilizacaoSetor').getContext('2d');
       const dadosUtil = setores.map(s => {
         const item = stats[s];
-        return item.internadosDia!==null&&item.internadosDia>0 ? parseFloat(((item.diasAVM/item.internadosDia)*100).toFixed(1)) : null;
+        return item.diasComCenso>0&&item.internadosDia>0 ? parseFloat(((item.avmDiasTaxa/item.internadosDia)*100).toFixed(1)) : null;
       });
 
       if (chartInst.utilizacao) chartInst.utilizacao.destroy();
@@ -2770,6 +2781,8 @@
           diasAVM: 0,
           pacientesAVM: 0,
           internadosDia: 0,
+          avmDiasTaxa:0,
+          diasComCenso:0,
           diasTotalAVM:0,
           naoProgNotificadas:0,diasIOTExt:0,qtdIOTExt:0,diasTQTDecanul:0,qtdTQTDecanul:0,
           totExt: 0,
@@ -2782,7 +2795,12 @@
         };
       });
 
-      SETORES_ATIVOS.forEach(s=>{stats[s].internadosDia=somarInternadosDiaSetor(s,dtInicio,dtFim);});
+      SETORES_ATIVOS.forEach(s=>{
+        const base=calcularBaseTaxaUtilizacaoAVM(s,dtInicio,dtFim);
+        stats[s].internadosDia=base.internadosDia;
+        stats[s].avmDiasTaxa=base.avmDias;
+        stats[s].diasComCenso=base.diasComCenso;
+      });
       const pacientesPeriodo=pacientes.filter(p=>contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
 
       pacientesPeriodo.forEach(p => {
@@ -2793,7 +2811,7 @@
         stats[s].total++;
         stats[s].pacientesAVM++;
         stats[s].diasAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
-        stats[s].diasTotalAVM += calcularTempoTotalAVM(p);
+        stats[s].diasTotalAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
 
       });
       pacientes.forEach(p=>{
@@ -2831,7 +2849,7 @@
       SETORES_ATIVOS.forEach(set => {
         const item = stats[set] || { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
         const internadosDia = item.internadosDia;
-        const txUtilizacao = internadosDia!==null&&internadosDia>0 ? ((item.diasAVM/internadosDia)*100).toFixed(1)+'%' : '—';
+        const txUtilizacao = item.diasComCenso>0&&internadosDia>0 ? ((item.avmDiasTaxa/internadosDia)*100).toFixed(1)+'%' : '—';
 
         const totNaoProg = item.autoextubacao + item.acidental;
         const txNaoProg = item.totExt > 0 ? ((totNaoProg / item.totExt) * 100).toFixed(1) + '%' : '0.0%';
@@ -2847,7 +2865,7 @@
             <td><strong>${set}</strong></td>
             <td>${item.pacientesAVM}</td>
             <td>${item.diasAVM} d</td>
-            <td><strong>${item.pacientesAVM>0?(item.diasTotalAVM/item.pacientesAVM).toFixed(1)+' d':'—'}</strong></td>
+            <td><strong>${item.pacientesAVM>0?(item.diasAVM/item.pacientesAVM).toFixed(1)+' d':'—'}</strong></td>
             <td><strong style="color: var(--primary);">${txUtilizacao}</strong></td>
             <td><strong>${item.totExt}</strong></td>
             <td><strong style="color: var(--danger);">${item.totRetot}</strong></td>
