@@ -188,36 +188,7 @@ Deno.serve(async (req) => {
       const diasNoPeriodo=avmDays(p,startDate,endDate);
       if(startDate&&iot&&iot> endDate)continue;
       if(startDate&&outcomeDate&&outcomeDate<startDate&&diasNoPeriodo===0)continue;
-      s.total += 1;
-      const tqtDate = isoDate(p.dataTQT);
-      // TQT é agregada por paciente/setor/data após percorrer os registros abaixo.
-      const outcome = String(p.desfecho || "").toUpperCase();
-      if (outcome === "ÓBITO") { s.obitos += 1; s.desfechos.obitos += 1; }
-      else if (outcome === "ATIVO") s.desfechos.ativos += 1;
-      else if (outcome === "EXTOT SEM FALHA" || outcome === "DECANULADO SEM FALHA") s.desfechos.sucesso += 1;
-      else if (outcome === "TRANSFERÊNCIA" || outcome === "ALTA HOSPITALAR") s.desfechos.transferencia += 1;
-      const avmStart=getStartAVM(p);
-      if(avmStart){
-        const events=getEvents(p,avmStart);
-        for(const day of Object.keys(daily)){
-          const endClinical=String(p?.desfecho||"").toUpperCase()!=="ATIVO"&&outcomeDate?outcomeDate:"";
-          if(day>=avmStart&&(!endClinical||day<=endClinical)&&isAVMOnDay(events,day))daily[day].avm+=1;
-        }
-      }
-      if (Array.isArray(p.ciclos)) {
-        for (const c of p.ciclos) {
-          const extDate = isoDate(c?.dataExt);
-          if (!inside(extDate, startDate, endDate)) continue;
-          s.totExt += 1;
-          if (c.tipoExt === "PROGRAMADA") s.programada += 1;
-          else if (c.tipoExt === "AUTOEXTUBACAO") s.autoextubacao += 1;
-          else if (c.tipoExt === "ACIDENTAL") s.acidental += 1;
-          if (c.teveRetot) {
-            s.totRetot += 1;
-            if (c.falha48h) s.falhas48h += 1;
-          }
-        }
-      }
+      // Ciclos, pacientes e desfechos são consolidados por paciente/setor abaixo.
     }
 
     // Consolidar AVM-pacientes, AVM-Dia e eventos TQT sem duplicar ciclos/registros.
@@ -231,6 +202,37 @@ Deno.serve(async (req) => {
         s.pacientesAVM++;
         s.diasAVM+=patientAVMDays;
         s.diasTotalAVM+=patientAVMDays;
+        s.total++;
+      }
+      const outcomeRows=group.rows.filter(p=>String(p.desfecho||"").trim()!=="")
+        .sort((a,b)=>isoDate(b.dataDesfecho).localeCompare(isoDate(a.dataDesfecho)));
+      const outcomeRow=outcomeRows[0];
+      if(outcomeRow){
+        const outcome=String(outcomeRow.desfecho||"").toUpperCase();
+        const outcomeDate=isoDate(outcomeRow.dataDesfecho);
+        if(outcome==="ÓBITO"&&inside(outcomeDate,startDate,endDate)){s.obitos++;s.desfechos.obitos++;}
+        else if(outcome==="ATIVO")s.desfechos.ativos++;
+        else if(outcome==="EXTOT SEM FALHA"||outcome==="DECANULADO SEM FALHA")s.desfechos.sucesso++;
+        else if(outcome==="TRANSFERÊNCIA"||outcome==="ALTA HOSPITALAR")s.desfechos.transferencia++;
+      }
+      // Reúne ciclos complementares e remove apenas cópias idênticas do mesmo evento.
+      const cycles=new Map<string,any>();
+      for(const p of group.rows)for(const cycle of Array.isArray(p.ciclos)?p.ciclos:[]){
+        const extDate=isoDate(cycle?.dataExt),retDate=isoDate(cycle?.dataRetot);
+        if(!inside(extDate,startDate,endDate))continue;
+        const eventKey=[extDate,String(cycle.tipoExt||""),retDate,String(cycle.numeroNotificacao||"")].join("|");
+        if(!cycles.has(eventKey))cycles.set(eventKey,cycle);
+      }
+      for(const cycle of cycles.values()){
+        s.totExt++;
+        if(cycle.tipoExt==="PROGRAMADA")s.programada++;
+        else if(cycle.tipoExt==="AUTOEXTUBACAO")s.autoextubacao++;
+        else if(cycle.tipoExt==="ACIDENTAL")s.acidental++;
+        const retDate=isoDate(cycle.dataRetot);
+        if(cycle.teveRetot&&inside(retDate,startDate,endDate)){
+          s.totRetot++;
+          if(cycle.falha48h)s.falhas48h++;
+        }
       }
       const tqtEvents=new Map<string,any>();
       for(const p of group.rows){
