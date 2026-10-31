@@ -1626,6 +1626,8 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       document.getElementById('dashTempoIOTExtSub').textContent = t.qtdIOTExt > 0 ? `Média de ${t.qtdIOTExt} extubações válidas` : 'Sem extubações válidas no período';
       document.getElementById('dashTempoTQTDecanul').textContent = t.mediaTQTDecanul == null ? '—' : `${Number(t.mediaTQTDecanul).toFixed(1)} d`;
       document.getElementById('dashTempoTQTDecanulSub').textContent = t.qtdTQTDecanul > 0 ? `Média de ${t.qtdTQTDecanul} decanulações válidas` : 'Sem decanulações válidas no período';
+      document.getElementById('dashPercNotificadas').textContent = formatarPercentualAgregado(t.txNotificadas);
+      document.getElementById('dashPercNotificadasSub').textContent = `${t.notificadas || 0} notificadas / ${(t.autoextubacao || 0) + (t.acidental || 0)} não programadas`;
       document.getElementById('dashTaxaObito').textContent = formatarPercentualAgregado(t.txObito);
       document.getElementById('dashObitoSub').textContent = `${t.obitos || 0} óbitos em AVM`;
       renderizarGraficosConvidado(data);
@@ -1668,7 +1670,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
           <td>${formatarPercentualAgregado(item.txSucesso)}</td><td>${item.autoextubacao || 0}</td><td>${item.acidental || 0}</td>
           <td>${formatarPercentualAgregado(item.txNaoProg)}</td><td>${item.tqt || 0}</td><td>${media}</td>
           <td>${mediaIOTExt}</td><td>${mediaTQTDecanul}</td>
-          <td>—</td><td>${item.obitos || 0}</td>
+          <td>${formatarPercentualAgregado(item.txNotificadas)}</td><td>${item.obitos || 0}</td>
         </tr>`;
       });
     }
