@@ -109,14 +109,16 @@ Deno.serve(async (req) => {
     const endDate = end || new Date().toISOString().slice(0, 10);
     const span = Math.max(1, (daysBetween(startDate, endDate) ?? 0) + 1);
     const stats: Record<string, any> = {};
-    const daily: Record<string, { data: string; avm: number; internados: number }> = {};
+    const daily: Record<string, { data: string; avm: number; internados: number | null }> = {};
+    const censoPresente: Record<string, Set<string>> = {};
     for (let t = new Date(startDate + "T00:00:00Z"); t <= new Date(endDate + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + 1)) {
       const day = t.toISOString().slice(0, 10);
       daily[day] = { data: day, avm: 0, internados: 0 };
+      censoPresente[day]=new Set<string>();
     }
     const ensure = (sector: string) => {
       if (!stats[sector]) stats[sector] = {
-        setor: sector, total: 0, pacientesAVM:0, diasAVM: 0, diasTotalAVM:0, internadosDia: 0,
+        setor: sector, total: 0, pacientesAVM:0, diasAVM: 0, diasTotalAVM:0, internadosDia: 0, ocupacaoCompleta:true,
         totExt: 0, totRetot: 0, falhas48h: 0, programada: 0, autoextubacao: 0, acidental: 0,
         tqt: 0, obitos: 0, diasIOTTQT: 0, qtdIOTTQT: 0,
         desfechos: { ativos: 0, sucesso: 0, transferencia: 0, obitos: 0 },
@@ -132,8 +134,17 @@ Deno.serve(async (req) => {
         const s = ensure(sector);
         const count = Math.max(0, Number(value) || 0);
         s.internadosDia += count;
-        if (daily[date]) daily[date].internados += count;
+        if (daily[date]) { daily[date].internados = (daily[date].internados||0) + count; censoPresente[date].add(sector); }
       }
+    }
+    for(const day of Object.keys(daily)){
+      let dailyComplete=true;
+      for(const sector of Object.keys(stats)){
+        if(censoPresente[day]?.has(sector))continue;
+        if(day<"2026-10-29"){stats[sector].internadosDia+=10;daily[day].internados=(daily[day].internados||0)+10;}
+        else{stats[sector].ocupacaoCompleta=false;dailyComplete=false;}
+      }
+      if(!dailyComplete)daily[day].internados=null;
     }
 
     for (const row of patients) {
@@ -195,7 +206,7 @@ Deno.serve(async (req) => {
         totExt: s.totExt, totRetot: s.totRetot, falhas48h: s.falhas48h,
         programada: s.programada, autoextubacao: s.autoextubacao, acidental: s.acidental, tqt: s.tqt, obitos: s.obitos,
         desfechos: s.desfechos,
-        txUtilizacao: s.internadosDia > 0 ? Math.min(100, s.diasAVM / s.internadosDia * 100) : 0,
+        txUtilizacao: s.ocupacaoCompleta && s.internadosDia > 0 ? Math.min(100, s.diasAVM / s.internadosDia * 100) : null,
         txNaoProg: s.totExt > 0 ? nonProgrammed / s.totExt * 100 : 0,
         txSucesso: s.totExt > 0 ? (s.totExt - s.falhas48h) / s.totExt * 100 : 0,
         txFalha: s.totExt > 0 ? s.falhas48h / s.totExt * 100 : 0,
@@ -214,7 +225,8 @@ Deno.serve(async (req) => {
     }, { total:0,pacientesAVM:0,diasAVM:0,diasTotalAVM:0,internadosDia:0,totExt:0,totRetot:0,falhas48h:0,autoextubacao:0,acidental:0,tqt:0,obitos:0,qtdIOTTQT:0,diasIOTTQT:0 });
     total.qtdPacientesAVM=total.pacientesAVM;
     total.mediaAVM=total.pacientesAVM>0?total.diasTotalAVM/total.pacientesAVM:null;
-    total.txUtilizacao = total.internadosDia > 0 ? Math.min(100, total.diasAVM / total.internadosDia * 100) : 0;
+    total.ocupacaoCompleta=sectors.every((s:any)=>s.ocupacaoCompleta);
+    total.txUtilizacao = total.ocupacaoCompleta && total.internadosDia > 0 ? Math.min(100, total.diasAVM / total.internadosDia * 100) : null;
     total.txNaoProg = total.totExt > 0 ? (total.autoextubacao + total.acidental) / total.totExt * 100 : 0;
     total.txSucesso = total.totExt > 0 ? (total.totExt - total.falhas48h) / total.totExt * 100 : 0;
     total.txFalha = total.totExt > 0 ? total.falhas48h / total.totExt * 100 : 0;
@@ -225,7 +237,7 @@ Deno.serve(async (req) => {
       for (const k of ["ativos", "sucesso", "transferencia", "obitos"]) a[k] += Number(s.desfechos?.[k]) || 0;
       return a;
     }, { ativos: 0, sucesso: 0, transferencia: 0, obitos: 0 });
-    const evolucaoDiaria = Object.values(daily).map(d => ({ ...d, internados: Math.max(0, d.internados) }));
+    const evolucaoDiaria = Object.values(daily).map(d => ({ ...d, internados: d.internados===null?null:Math.max(0,d.internados) }));
 
     // Apenas valores agregados são retornados. Nenhum nome, registro, app_id ou linha individual sai da função.
     return json({ ok: true, dataInicio: startDate, dataFim: endDate, setores: sectors, total, evolucaoDiaria });
