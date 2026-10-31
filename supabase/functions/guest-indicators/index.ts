@@ -42,8 +42,8 @@ const getEvents = (p: any, start: string) => {
 };
 const isAVMOnDay = (events: {date:string;avm:boolean;order:number}[], day:string) => {
   let state=false;
-  for(const e of events)if(e.date<day)state=e.avm;
-  return state||events.some(e=>e.date===day&&e.avm);
+  for(const e of events)if(e.date<=day)state=e.avm;
+  return state;
 };
 const avmDays = (p:any,start:string,end:string) => {
   const beginning=getStartAVM(p);
