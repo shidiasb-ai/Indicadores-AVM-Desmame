@@ -116,9 +116,9 @@ Deno.serve(async (req) => {
       if (!data || data.length < 1000) break;
     }
 
-    const startDate = start || "2026-11-01";
-    const endDate = end || new Date().toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
+    const startDate = start || "2026-11-01";
+    const endDate = end || (today < startDate ? startDate : today);
     const stats: Record<string, any> = {};
     const daily: Record<string, { data: string; avm: number; internados: number | null }> = {};
     const censoByDay: Record<string, Record<string, number>> = {};
