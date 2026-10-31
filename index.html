@@ -555,7 +555,7 @@
           <div class="kpi-desc">Soma dos dias em VM invasiva no período</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-title">Tempo médio de AVM</div>
+          <div class="kpi-title">Média de dias em AVM por paciente no período</div>
           <div class="kpi-num" id="dashTempoMedioAVM">—</div>
           <div class="kpi-desc" id="dashTempoMedioAVMSub">Duração média dos episódios dos pacientes no período</div>
         </div>
@@ -691,7 +691,7 @@
                 <th>Setor / Unidade</th>
                 <th title="Número de pacientes distintos com pelo menos um dia de AVM no período e setor selecionados">Pacientes em AVM</th>
                 <th title="Soma dos dias em ventilação mecânica invasiva dentro do período selecionado">AVM-Dia</th>
-                <th>Tempo médio de AVM (dias)</th>
+                <th title="AVM-Dia do período dividido pelo número de pacientes distintos com AVM no período">Média de dias em AVM por paciente</th>
                 <th>Tx. Utilização AVM</th>
                 <th>Total Extubações</th>
                 <th>Total RETOTs</th>
@@ -2393,7 +2393,7 @@
 
       document.getElementById('dashPacientesDia').textContent = `${globDiasAVM} d`;
       document.getElementById('dashTempoMedioAVM').textContent=pacFiltrados.length?(globDiasAVM/pacFiltrados.length).toFixed(1)+' d':'—';
-      document.getElementById('dashTempoMedioAVMSub').textContent=pacFiltrados.length?`Média de ${pacFiltrados.length} pacientes distintos com AVM no período`:'Sem pacientes com AVM no período';
+      document.getElementById('dashTempoMedioAVMSub').textContent=pacFiltrados.length?`AVM-Dia dividido por ${pacFiltrados.length} pacientes distintos no período`:'Sem pacientes com AVM no período';
       document.getElementById('dashTaxaTQT').textContent = `${globTxTQT}%`;
       document.getElementById('dashTQTSub').textContent = `${globTQT} traqueostomias`;
 
