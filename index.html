@@ -2105,7 +2105,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     function apontarStatus(realIdx, novoStatus) {
       const p = pacientes[realIdx];
       if (!p) return;
-      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+      const dataRonda = document.getElementById('dataRonda').value || obterDataLocalISO();
       if (!p.historico) p.historico = {};
 
       p.historico[dataRonda] = novoStatus;
@@ -2130,7 +2130,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     function abrirModalCiclos(realIdx) {
       const p = pacientes[realIdx];
       if (!p) return;
-      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+      const dataRonda = document.getElementById('dataRonda').value || obterDataLocalISO();
 
       document.getElementById('modalCiclosPacienteIndex').value = realIdx;
       document.getElementById('modalCiclosPacienteNome').textContent = `${p.nome} • Setor: ${p.setor} • IOT: ${formatarData(p.dataIOT)}`;
@@ -2212,7 +2212,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         falha48h: falha48h
       });
 
-      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+      const dataRonda = document.getElementById('dataRonda').value || obterDataLocalISO();
       if (!p.historico) p.historico = {};
 
       if (teveRetot) {
@@ -2246,7 +2246,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     function abrirModalTQT(realIdx, tipo) {
       const p = pacientes[realIdx];
       if (!p) return;
-      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+      const dataRonda = document.getElementById('dataRonda').value || obterDataLocalISO();
 
       document.getElementById('modalTQTPacienteIndex').value = realIdx;
       document.getElementById('modalTQTTipoAcao').value = tipo;
@@ -2289,7 +2289,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       if (!p) return;
       document.getElementById('modalPacienteIndex').value = realIdx;
       document.getElementById('modalPacienteNome').textContent = `${p.nome} • Setor: ${p.setor} • IOT: ${formatarData(p.dataIOT)}`;
-      document.getElementById('modalDataDesfecho').value = document.getElementById('dataRonda').value || '2026-10-27';
+      document.getElementById('modalDataDesfecho').value = document.getElementById('dataRonda').value || obterDataLocalISO();
       document.getElementById('modalDesfecho').classList.add('active');
     }
 
@@ -2317,8 +2317,10 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     }
 
     function resetarFiltrosDash() {
-      document.getElementById('filtroDashInicio').value = '2026-10-01';
-      document.getElementById('filtroDashFim').value = '2026-10-27';
+      const hoje=obterDataLocalISO();
+      const inicioMes=hoje.slice(0,7)+'-01';
+      document.getElementById('filtroDashInicio').value = inicioMes;
+      document.getElementById('filtroDashFim').value = hoje;
       setoresSelecionadosDash = [...SETORES_ATIVOS];
       renderizarChipsSetores();
       atualizarDashboard();
