@@ -2326,10 +2326,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     function tqtPertenceAoSetor(p) {
       const tqt=String(p?.dataTQT||'').slice(0,10);
       const adm=String(p?.dataAdm||'').slice(0,10);
-      if(!/^\d{4}-\d{2}-\d{2}$/.test(tqt))return false;
-      // Cadastros legados sem admissão no setor permanecem utilizáveis.
-      // Nos novos registros, evento anterior à entrada não pertence ao setor.
-      return !/^\d{4}-\d{2}-\d{2}$/.test(adm)||tqt>=adm;
+      return /^\\d{4}-\\d{2}-\\d{2}$/.test(tqt)&&/^\\d{4}-\\d{2}-\\d{2}$/.test(adm)&&tqt>=adm;
     }
     function dataDoEventoPertenceAoSetor(p,dataEvento) {
       const evento=String(dataEvento||'').slice(0,10);
@@ -2383,55 +2380,35 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       return iotOk||admOk;
     }
     function avaliarExtubacoesPeriodo(p,inicio,fim,hoje=obterDataLocalISO()) {
-      // Cada ciclo representa um evento próprio. Não deduplicar pela data:
-      // duas extubações no mesmo dia continuam sendo dois eventos distintos.
-      const ciclos=(p?.ciclos||[]).filter(c=>/^\d{4}-\d{2}-\d{2}$/.test(String(c.dataExt||'').slice(0,10)))
+      const ciclos=(p?.ciclos||[]).filter(c=>/^\\d{4}-\\d{2}-\\d{2}$/.test(String(c.dataExt||'').slice(0,10)))
         .slice().sort((a,b)=>String(a.dataExt).slice(0,10).localeCompare(String(b.dataExt).slice(0,10)));
       const resultado={total:0,retot:0,falhas48h:0,avaliaveis:0,sucessos:0,pendentes:0,auto:0,acidental:0,programada:0,notificadas:0,diasIOTExt:0,qtdIOTExt:0};
       ciclos.forEach((c,i)=>{
-        const dataExt=String(c.dataExt).slice(0,10);
-        if(!dataDentroPeriodo(dataExt,inicio,fim))return;
-        // Toda extubação no período entra no total, inclusive fast track e eventos recentes.
-        resultado.total++;
-        if(c.tipoExt==='AUTOEXTUBACAO'){resultado.auto++;if(String(c.numeroNotificacao||'').trim())resultado.notificadas++;}
-        else if(c.tipoExt==='ACIDENTAL'){resultado.acidental++;if(String(c.numeroNotificacao||'').trim())resultado.notificadas++;}
-        else if(c.tipoExt==='PROGRAMADA')resultado.programada++;
-
-        // RETOT é contada pela data em que a reintubação ocorreu, não pela extubação.
-        const dataRetot=String(c.dataRetot||'').slice(0,10);
-        if(c.teveRetot&&dataDentroPeriodo(dataRetot,inicio,fim))resultado.retot++;
-
-        // A taxa de sucesso/falha usa apenas eventos com desfecho conhecido após 48h.
-        // Com datas sem horário, diferenças de 0–1 dia indicam falha; >=2 dias
-        // são avaliadas pelo campo clínico falha48h para resolver a fronteira de 48h.
-        if(c.teveRetot){
-          if(dataRetot&&/^\d{4}-\d{2}-\d{2}$/.test(dataRetot)){
-            const diasAteRetot=diasEntreDatasIOTeTQT(dataExt,dataRetot);
-            if(diasAteRetot!==null&&diasAteRetot>=0){
+        const dataExt=String(c.dataExt).slice(0,10),dataRetot=String(c.dataRetot||'').slice(0,10);
+        const extValida=dataDoEventoPertenceAoSetor(p,dataExt);
+        const retValida=c.teveRetot&&dataDoEventoPertenceAoSetor(p,dataRetot);
+        if(extValida&&dataDentroPeriodo(dataExt,inicio,fim)){
+          resultado.total++;
+          if(c.tipoExt==='AUTOEXTUBACAO'){resultado.auto++;if(String(c.numeroNotificacao||'').trim())resultado.notificadas++;}
+          else if(c.tipoExt==='ACIDENTAL'){resultado.acidental++;if(String(c.numeroNotificacao||'').trim())resultado.notificadas++;}
+          else if(c.tipoExt==='PROGRAMADA')resultado.programada++;
+          if(c.teveRetot&&dataRetot&&/^\\d{4}-\\d{2}-\\d{2}$/.test(dataRetot)){
+            const gap=diasEntreDatasIOTeTQT(dataExt,dataRetot);
+            if(gap!==null&&gap>=0){
               resultado.avaliaveis++;
-              const falha=diasAteRetot<=1 ? true : (diasAteRetot>2 ? false : (typeof c.falha48h==='boolean'?c.falha48h:null));
-              if(falha===true)resultado.falhas48h++;else if(falha===false)resultado.sucessos++;else resultado.pendentes++;
-            } else { resultado.pendentes++; }
-          } else if(c.falha48h===true){
-            // Registro legado: há indicação explícita de falha, embora falte a data RETOT.
-            resultado.avaliaveis++;resultado.falhas48h++;
-          } else if(c.falha48h===false){
-            // Registro legado marcado explicitamente como reintubação tardia.
-            resultado.avaliaveis++;resultado.sucessos++;
-          } else { resultado.pendentes++; }
-        } else {
-          const diasAcompanhamento=diasEntreDatasIOTeTQT(dataExt,hoje);
-          if(diasAcompanhamento!==null&&diasAcompanhamento>=2){resultado.avaliaveis++;resultado.sucessos++;}
-          else resultado.pendentes++;
-        }
-
-        // O tempo só é atribuído ao setor quando há admissão setorial válida
-        // e a extubação ocorreu durante essa permanência.
-        if(dataDoEventoPertenceAoSetor(p,dataExt)){
+              const falha=typeof c.falha48h==='boolean'?c.falha48h:gap<=1;
+              if(falha)resultado.falhas48h++;else resultado.sucessos++;
+            } else resultado.pendentes++;
+          } else {
+            const acompanhamento=diasEntreDatasIOTeTQT(dataExt,hoje);
+            if(acompanhamento!==null&&acompanhamento>=2){resultado.avaliaveis++;resultado.sucessos++;}
+            else resultado.pendentes++;
+          }
           const inicioEpisodio=obterInicioEpisodioExtubacao(p,ciclos,i);
           const duracao=diasEntreDatasIOTeTQT(inicioEpisodio,dataExt);
           if(duracao!==null&&duracao>=0){resultado.diasIOTExt+=duracao;resultado.qtdIOTExt++;}
         }
+        if(retValida&&dataDentroPeriodo(dataRetot,inicio,fim))resultado.retot++;
       });
       return resultado;
     }
@@ -2484,7 +2461,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       // Eventos são atribuídos ao registro/setor em que foram lançados.
       // Extubações são avaliadas por episódio e sucesso só é contado após 48h completas.
       const obitosContadosDash=new Set(), tqtContadasDash=new Set(), decanulContadasDash=new Set();
-      pacientes.forEach(p => {
+      consolidarPacientesPorSetor().forEach(p => {
         const s=normalizarSetorIndicador(p.setor),item=statsPorSetor[s];
         if(!item)return;
         const ev=avaliarExtubacoesPeriodo(p,dtInicio,dtFim);
@@ -3012,7 +2989,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         stats[s].diasTotalAVM=resumo.diasAVM;
       });
       const obitosContadosDados=new Set();
-      pacientes.forEach(p=>{
+      consolidarPacientesPorSetor().forEach(p=>{
         const s=normalizarSetorIndicador(p.setor); if(!stats[s])return;
         const ev=avaliarExtubacoesPeriodo(p,dtInicio,dtFim);
         stats[s].totExt+=ev.total;stats[s].totRetot+=ev.retot;stats[s].falhas48h+=ev.falhas48h;
@@ -3037,7 +3014,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
 
       // Eventos TQT, IOT–TQT e decanulação são filtrados pela data do próprio evento.
       const tqtContadasDados=new Set(), decanulContadasDados=new Set(), iottqtContadasDados=new Set();
-      pacientes.forEach(p => {
+      consolidarPacientesPorSetor().forEach(p => {
         const s=normalizarSetorIndicador(p.setor); if(!stats[s])return;
         const chavePacienteSetor=s+'|'+chavePacienteIndicador(p);
         if(tqtPertenceAoSetor(p)&&dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)){
