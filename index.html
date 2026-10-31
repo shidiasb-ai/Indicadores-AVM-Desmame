@@ -817,6 +817,13 @@
             <option value="ATIVO">Somente Leitos Ativos</option>
             <option value="DESFECHADOS">Somente Desfechados (Liberados)</option>
           </select>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1.4;min-width:260px;">
+            <label for="filtroGeralInicio" style="font-size:.75rem;color:var(--text-muted)">De:</label>
+            <input type="date" id="filtroGeralInicio" class="form-ctrl" style="min-width:130px;" onchange="paginaAtualGeral=0;renderizarTabelaGeral()">
+            <label for="filtroGeralFim" style="font-size:.75rem;color:var(--text-muted)">Até:</label>
+            <input type="date" id="filtroGeralFim" class="form-ctrl" style="min-width:130px;" onchange="paginaAtualGeral=0;renderizarTabelaGeral()">
+            <button class="btn" type="button" style="padding:6px 9px" onclick="limparFiltroPeriodoGeral()">Limpar período</button>
+          </div>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:8px 0">
           <span style="font-size:.78rem;color:var(--text-muted)">Tabela paginada para manter o sistema rápido. Todos os registros continuam disponíveis pela busca e filtros.</span>
@@ -3597,20 +3604,44 @@
     }
     function mudarTamanhoPaginaGeral() { paginaAtualGeral = 0; renderizarTabelaGeral(); }
 
+    function registroDentroDoPeriodoGeral(p,inicio,fim) {
+      if(!inicio&&!fim)return true;
+      const de=inicio||'0000-01-01',ate=fim||'9999-12-31';
+      if(inicio&&fim&&fim<inicio)return false;
+      const datas=[
+        p.dataAdm,p.dataIOT,p.dataDesfecho,p.dataTQT,p.dataDecanul,
+        ...Object.keys(p.historico||{}),
+        ...(p.ciclos||[]).flatMap(c=>[c.dataExt,c.dataRetot])
+      ].filter(Boolean).map(d=>String(d).slice(0,10));
+      if(datas.some(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&d>=de&&d<=ate))return true;
+      // Também inclui internações que atravessam o período, mesmo sem evento cadastrado dentro dele.
+      const adm=String(p.dataAdm||p.dataIOT||'').slice(0,10);
+      const saida=String(p.dataDesfecho||'').slice(0,10);
+      if(adm&&adm<=ate&&(!saida||saida>=de))return true;
+      return false;
+    }
+    function limparFiltroPeriodoGeral() {
+      const a=document.getElementById('filtroGeralInicio'),b=document.getElementById('filtroGeralFim');
+      if(a)a.value='';if(b)b.value='';
+      paginaAtualGeral=0;renderizarTabelaGeral();
+    }
     function renderizarTabelaGeral() {
       const tbody = document.getElementById('tabelaGeralCorpo');
       if (!tbody) return;
       const termo = (document.getElementById('filtroTexto').value || '').toLowerCase();
       const setorF = document.getElementById('filtroSetor').value;
       const statusF = document.getElementById('filtroStatusLeito').value;
+      const periodoInicio=document.getElementById('filtroGeralInicio')?.value||'';
+      const periodoFim=document.getElementById('filtroGeralFim')?.value||'';
       const tamanhoPagina = Math.max(1, Number(document.getElementById('tamanhoPaginaGeral')?.value) || 100);
       const filtrados = pacientes.filter(p => {
         const mTexto = (p.nome || '').toLowerCase().includes(termo) || String(p.registro || '').toLowerCase().includes(termo);
-        const mSetor = !setorF || p.setor === setorF;
+        const mSetor = !setorF || normalizarSetorIndicador(p.setor) === normalizarSetorIndicador(setorF);
         let mStatus = true;
         if (statusF === 'ATIVO') mStatus = p.desfecho === 'ATIVO';
         if (statusF === 'DESFECHADOS') mStatus = p.desfecho !== 'ATIVO';
-        return mTexto && mSetor && mStatus;
+        const mPeriodo=registroDentroDoPeriodoGeral(p,periodoInicio,periodoFim);
+        return mTexto && mSetor && mStatus && mPeriodo;
       });
       const totalPaginas = Math.max(1, Math.ceil(filtrados.length / tamanhoPagina));
       paginaAtualGeral = Math.max(0, Math.min(paginaAtualGeral, totalPaginas - 1));
