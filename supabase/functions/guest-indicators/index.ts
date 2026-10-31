@@ -23,6 +23,45 @@ const daysBetween = (start: string, end: string) => {
 };
 const inside = (date: string, start: string, end: string) =>
   !!date && (!start || date >= start) && (!end || date <= end);
+const getStartAVM = (p: any) => {
+  const adm=isoDate(p?.dataAdm), iot=isoDate(p?.dataIOT);
+  const history=Object.entries(p?.historico||{}).filter(([d,v])=>isoDate(d)&&v==="AVM"&&(!adm||String(d)>=adm)).map(([d])=>String(d)).sort();
+  if(iot&&(!adm||iot>=adm))return iot;
+  if(adm)return history[0]||"";
+  return iot||history[0]||"";
+};
+const getEvents = (p: any, start: string) => {
+  const events: {date:string; avm:boolean; order:number}[]=[{date:start,avm:true,order:0}];
+  for(const [date,status] of Object.entries(p?.historico||{}))if(isoDate(date)&&String(date)>=start)events.push({date:String(date),avm:status==="AVM",order:2});
+  for(const c of Array.isArray(p?.ciclos)?p.ciclos:[]){
+    const ext=isoDate(c?.dataExt),ret=isoDate(c?.dataRetot);
+    if(ext&&ext>=start)events.push({date:ext,avm:false,order:1});
+    if(c?.teveRetot&&ret&&ret>=start)events.push({date:ret,avm:true,order:1});
+  }
+  return events.sort((a,b)=>a.date.localeCompare(b.date)||a.order-b.order);
+};
+const isAVMOnDay = (events: {date:string;avm:boolean;order:number}[], day:string) => {
+  let state=false;
+  for(const e of events)if(e.date<day)state=e.avm;
+  return state||events.some(e=>e.date===day&&e.avm);
+};
+const avmDays = (p:any,start:string,end:string) => {
+  const beginning=getStartAVM(p);
+  if(!beginning||!start||!end||end<start)return 0;
+  const outcome=isoDate(p?.dataDesfecho);
+  const stop=[end,outcome&&String(p?.desfecho||"").toUpperCase()!=="ATIVO"?outcome:end].sort()[0];
+  const from=beginning>start?beginning:start;
+  if(stop<from)return 0;
+  const events=getEvents(p,beginning);let count=0;
+  for(let d=new Date(from+"T00:00:00Z");d<=new Date(stop+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+1))if(isAVMOnDay(events,d.toISOString().slice(0,10)))count++;
+  return count;
+};
+const totalAVMDuration = (p:any) => {
+  const start=getStartAVM(p);if(!start)return 0;
+  const outcome=isoDate(p?.dataDesfecho),today=new Date().toISOString().slice(0,10);
+  const end=String(p?.desfecho||"").toUpperCase()!=="ATIVO"&&outcome?outcome:today;
+  return avmDays(p,start,end);
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -77,7 +116,7 @@ Deno.serve(async (req) => {
     }
     const ensure = (sector: string) => {
       if (!stats[sector]) stats[sector] = {
-        setor: sector, total: 0, diasAVM: 0, internadosDia: 0,
+        setor: sector, total: 0, pacientesAVM:0, diasAVM: 0, diasTotalAVM:0, internadosDia: 0,
         totExt: 0, totRetot: 0, falhas48h: 0, programada: 0, autoextubacao: 0, acidental: 0,
         tqt: 0, obitos: 0, diasIOTTQT: 0, qtdIOTTQT: 0,
         desfechos: { ativos: 0, sucesso: 0, transferencia: 0, obitos: 0 },
@@ -101,14 +140,17 @@ Deno.serve(async (req) => {
       const p = row?.dados || {};
       const iot = isoDate(p.dataIOT);
       const outcomeDate = isoDate(p.dataDesfecho);
-      // Mantém o mesmo critério de coorte do dashboard principal:
-      // pacientes iniciados antes do período só são excluídos se já tinham desfecho antes do início.
-      if (startDate && iot && iot < startDate && outcomeDate && outcomeDate < startDate) continue;
-      if (endDate && iot && iot > endDate) continue;
       const sector = String(p.setor || "NÃO INFORMADO").trim().slice(0, 80) || "NÃO INFORMADO";
       const s = ensure(sector);
+      const diasNoPeriodo=avmDays(p,startDate,endDate);
+      if(diasNoPeriodo>0){
+        s.pacientesAVM+=1;
+        s.diasAVM+=diasNoPeriodo;
+        s.diasTotalAVM+=totalAVMDuration(p);
+      }
+      if(startDate&&iot&&iot> endDate)continue;
+      if(startDate&&outcomeDate&&outcomeDate<startDate&&diasNoPeriodo===0)continue;
       s.total += 1;
-      s.diasAVM += Number(p.tempoAVM) || 0;
       const tqtDate = isoDate(p.dataTQT);
       if (tqtDate) s.tqt += 1;
       if (iot && tqtDate && tqtDate >= iot) {
@@ -120,14 +162,12 @@ Deno.serve(async (req) => {
       else if (outcome === "ATIVO") s.desfechos.ativos += 1;
       else if (outcome === "EXTOT SEM FALHA" || outcome === "DECANULADO SEM FALHA") s.desfechos.sucesso += 1;
       else if (outcome === "TRANSFERÊNCIA" || outcome === "ALTA HOSPITALAR") s.desfechos.transferencia += 1;
-      if (iot) {
-        const dailyStart = iot > startDate ? iot : startDate;
-        const stop = outcomeDate && outcomeDate < endDate ? outcomeDate : endDate;
-        if (stop >= dailyStart) {
-          for (let t = new Date(dailyStart + "T00:00:00Z"); t <= new Date(stop + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + 1)) {
-            const day = t.toISOString().slice(0, 10);
-            if (daily[day]) daily[day].avm += 1;
-          }
+      const avmStart=getStartAVM(p);
+      if(avmStart){
+        const events=getEvents(p,avmStart);
+        for(const day of Object.keys(daily)){
+          const endClinical=String(p?.desfecho||"").toUpperCase()!=="ATIVO"&&outcomeDate?outcomeDate:"";
+          if(day>=avmStart&&(!endClinical||day<=endClinical)&&isAVMOnDay(events,day))daily[day].avm+=1;
         }
       }
       if (Array.isArray(p.ciclos)) {
@@ -149,7 +189,9 @@ Deno.serve(async (req) => {
     const sectors = Object.values(stats).map((s: any) => {
       const nonProgrammed = s.autoextubacao + s.acidental;
       return {
-        setor: s.setor, total: s.total, diasAVM: s.diasAVM, internadosDia: Math.max(0, s.internadosDia),
+        setor: s.setor, total: s.total, pacientesAVM:s.pacientesAVM, diasAVM: s.diasAVM,
+        mediaAVM:s.pacientesAVM>0?s.diasTotalAVM/s.pacientesAVM:null, qtdPacientesAVM:s.pacientesAVM,
+        internadosDia: Math.max(0, s.internadosDia),
         totExt: s.totExt, totRetot: s.totRetot, falhas48h: s.falhas48h,
         programada: s.programada, autoextubacao: s.autoextubacao, acidental: s.acidental, tqt: s.tqt, obitos: s.obitos,
         desfechos: s.desfechos,
@@ -165,10 +207,13 @@ Deno.serve(async (req) => {
     }).sort((a, b) => a.setor.localeCompare(b.setor, "pt-BR"));
 
     const total = sectors.reduce((a: any, s: any) => {
-      for (const k of ["total","diasAVM","internadosDia","totExt","totRetot","falhas48h","autoextubacao","acidental","tqt","obitos","qtdIOTTQT"]) a[k] += Number(s[k]) || 0;
+      for (const k of ["total","pacientesAVM","diasAVM","internadosDia","totExt","totRetot","falhas48h","autoextubacao","acidental","tqt","obitos","qtdIOTTQT"]) a[k] += Number(s[k]) || 0;
+      a.diasTotalAVM+=(Number(s.mediaAVM)||0)*(Number(s.qtdPacientesAVM)||0);
       a.diasIOTTQT += (Number(s.mediaIOTTQT) || 0) * (Number(s.qtdIOTTQT) || 0);
       return a;
-    }, { total:0,diasAVM:0,internadosDia:0,totExt:0,totRetot:0,falhas48h:0,autoextubacao:0,acidental:0,tqt:0,obitos:0,qtdIOTTQT:0,diasIOTTQT:0 });
+    }, { total:0,pacientesAVM:0,diasAVM:0,diasTotalAVM:0,internadosDia:0,totExt:0,totRetot:0,falhas48h:0,autoextubacao:0,acidental:0,tqt:0,obitos:0,qtdIOTTQT:0,diasIOTTQT:0 });
+    total.qtdPacientesAVM=total.pacientesAVM;
+    total.mediaAVM=total.pacientesAVM>0?total.diasTotalAVM/total.pacientesAVM:null;
     total.txUtilizacao = total.internadosDia > 0 ? Math.min(100, total.diasAVM / total.internadosDia * 100) : 0;
     total.txNaoProg = total.totExt > 0 ? (total.autoextubacao + total.acidental) / total.totExt * 100 : 0;
     total.txSucesso = total.totExt > 0 ? (total.totExt - total.falhas48h) / total.totExt * 100 : 0;
