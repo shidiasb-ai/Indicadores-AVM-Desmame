@@ -1428,13 +1428,17 @@
 
     function obterInicioAVMNoSetor(p) {
       if (!p) return '';
-      const adm=String(p.dataAdm||'').slice(0,10), iot=String(p.dataIOT||'').slice(0,10);
-      const diasHistorico=Object.keys(p.historico||{}).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&p.historico[d]==='AVM'&&(!adm||d>=adm)).sort();
-      // Regra institucional: usar IOT se ocorreu durante a internação no setor;
-      // se a IOT antecede a admissão, iniciar no primeiro senso AVM daquele setor.
-      if(iot&&(!adm||iot>=adm))return iot;
-      if(adm)return diasHistorico[0]||'';
-      return iot||diasHistorico[0]||'';
+      const adm=String(p.dataAdm||'').slice(0,10);
+      const iot=String(p.dataIOT||'').slice(0,10);
+      const dataValida=d=>/^\d{4}-\d{2}-\d{2}$/.test(d);
+      // O acompanhamento no setor começa na data mais tardia entre admissão
+      // no setor e IOT. Assim, não se contabiliza ventilação de outro hospital/setor.
+      if(dataValida(adm)&&dataValida(iot))return adm>iot?adm:iot;
+      if(dataValida(adm))return adm;
+      if(dataValida(iot))return iot;
+      const diasHistorico=Object.keys(p.historico||{})
+        .filter(d=>dataValida(d)&&p.historico[d]==='AVM').sort();
+      return diasHistorico[0]||'';
     }
     function obterEventosAVM(p,inicio) {
       const ev=[{data:inicio,avm:true,ordem:0}];
@@ -1527,7 +1531,8 @@
         let ocupacao=null;
         if(valor!==undefined&&valor!==null&&String(valor).trim()!==''){
           const n=Number(valor);if(Number.isFinite(n)&&n>=0)ocupacao=n;
-        } else if(dia<'2026-10-29') ocupacao=10;
+        }
+        // Sem censo informado, o denominador fica indisponível; não estimar ocupação.
         if(ocupacao===null)continue;
         base.diasComCenso++;base.internadosDia+=ocupacao;
         const doDia=new Set();
@@ -1537,11 +1542,12 @@
       return base;
     }
 
-    // Corrige somente pacientes ativos em AVM contínua, sem ciclos ou interrupções documentadas.
-    // A atualização é por upsert dos pacientes alterados; nenhum registro é excluído.
+    // Recalcula e persiste somente registros ainda ativos. O cálculo respeita
+    // os status diários e os ciclos de extubação/RETOT; nenhum registro é excluído.
     async function corrigirDiasAVMAtivosNoSupabase() {
       const alterados = [];
       pacientes.forEach(p => {
+        if(p.desfecho!=='ATIVO')return;
         const antes = Number(p.tempoAVM) || 0;
         const depois = atualizarDiasAVMDoPaciente(p);
         if (obterInicioAVMNoSetor(p) && depois !== antes) alterados.push(p);
@@ -2080,13 +2086,14 @@
       p.statusHoje = novoStatus;
 
       const vals = Object.values(p.historico);
-      const cAVM = vals.filter(s => s === 'AVM').length;
       const cDesc = vals.filter(s => s === 'DESCONEXÃO').length;
       const cRE = vals.filter(s => s === 'RE').length;
 
-      if (cAVM > 0) p.tempoAVM = Math.max(Number(p.tempoAVM) || 0, cAVM);
-      if (cDesc > 0) p.tempoDesc = cDesc;
-      if (cRE > 0) p.tempoRE = cRE;
+      // O total AVM é recalculado pela cronologia, sem somar status duplicados
+      // nem manter valores antigos que possam estar superestimados.
+      p.tempoAVM = calcularDiasAVMAtual(p);
+      p.tempoDesc = cDesc;
+      p.tempoRE = cRE;
 
       salvarStorage();
       renderizarCenso();
@@ -2364,10 +2371,11 @@
       // Tempo IOT–TQT e total de TQT: considerar a data da TQT no período selecionado,
       // independentemente de a IOT ter ocorrido em período anterior.
       pacientes.forEach(p => {
-        if (!setoresFiltro.includes(p.setor) || !p.dataTQT) return;
+        const setorPaciente=normalizarSetorIndicador(p.setor);
+        if (!setoresFiltro.includes(setorPaciente) || !p.dataTQT) return;
         if (dtInicio && p.dataTQT < dtInicio) return;
         if (dtFim && p.dataTQT > dtFim) return;
-        const item = statsPorSetor[p.setor];
+        const item = statsPorSetor[setorPaciente];
         const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
         if (diasIOTTQT !== null) {
           item.diasIOTTQT = (item.diasIOTTQT || 0) + diasIOTTQT;
@@ -2698,16 +2706,23 @@
         datasEvol.push(new Date(dataCursor.getTime() - dataCursor.getTimezoneOffset() * 60000).toISOString().slice(0, 10));
       }
       const diasMes = datasEvol.map(d => d.slice(8, 10) + '/' + d.slice(5, 7));
-      const valoresAVM = datasEvol.map(dia => pacientes.filter(p =>
-        setores.includes(p.setor) && pacienteEmAVMNaData(p,dia)
-      ).length);
+      const valoresAVM = datasEvol.map(dia => {
+        const distintos=new Set();
+        pacientes.forEach(p=>{
+          const setor=normalizarSetorIndicador(p.setor);
+          if(setores.includes(setor)&&pacienteEmAVMNaData(p,dia))
+            distintos.add(setor+'|'+chavePacienteIndicador(p));
+        });
+        return distintos.size;
+      });
       const valoresInternados = datasEvol.map(dia => {
         let total=0, completo=true;
         setores.forEach(setor=>{
           const valor=censoInternados[dia]?.[setor];
-          if(valor!==undefined&&valor!==null&&valor!=='')total+=Math.max(0,Number(valor)||0);
-          else if(dia<'2026-10-29')total+=10;
-          else completo=false;
+          if(valor!==undefined&&valor!==null&&String(valor).trim()!==''){
+            const n=Number(valor);
+            if(Number.isFinite(n)&&n>=0)total+=n; else completo=false;
+          } else completo=false;
         });
         return completo?total:null;
       });
@@ -3023,7 +3038,7 @@
       tbody.innerHTML = '';
 
       SETORES_ATIVOS.forEach(set => {
-        const pacAtivos = pacientes.filter(p => p.setor === set && p.desfecho === 'ATIVO').length;
+        const pacAtivos = pacientes.filter(p => normalizarSetorIndicador(p.setor) === normalizarSetorIndicador(set) && p.desfecho === 'ATIVO').length;
         const cap = CAPACIDADE_SETORES[set] || 10;
         const tipo = TIPOS_SETORES[set] || 'UTI Adulto';
 
@@ -3534,18 +3549,9 @@
         tempoRE: pExistente ? pExistente.tempoRE : 0
       };
 
-      if (novo.desfecho === 'ATIVO' && novo.statusHoje === 'AVM' &&
-          (!novo.ciclos || novo.ciclos.length === 0) &&
-          !Object.values(novo.historico || {}).some(status => status && status !== 'AVM')) {
-        const diasDesdeIOT = contarDiasInclusivos(novo.dataIOT, obterDataLocalISO());
-        const diasHistorico = Object.values(novo.historico || {}).filter(status => status === 'AVM').length;
-        if (diasDesdeIOT !== null) {
-          const dataIOTFoiCorrigida = pExistente && pExistente.dataIOT !== novo.dataIOT;
-          novo.tempoAVM = dataIOTFoiCorrigida
-            ? Math.max(diasDesdeIOT, diasHistorico)
-            : Math.max(Number(novo.tempoAVM) || 0, diasDesdeIOT, diasHistorico);
-        }
-      }
+      // Atualiza o total pela linha do tempo completa: admissão no setor/IOT,
+      // status diários e ciclos. Não usa a data do cadastro como início da AVM.
+      novo.tempoAVM = calcularDiasAVMAtual(novo);
 
       if (idx >= 0) pacientes[idx] = novo;
       else pacientes.unshift(novo);
@@ -3681,7 +3687,7 @@
             <td><span class="badge b-info">${p.setor}</span></td>
             <td>${p.registro || '-'}</td>
             <td>${formatarData(p.dataIOT)}</td>
-            <td>${p.tempoAVM || 0} d</td>
+            <td>${calcularDiasAVMAtual(p)} d</td>
             <td>${resumoCiclos}</td>
             <td>${descTQT}</td>
             <td><span class="badge ${badgeDesf}">${p.desfecho}</span></td>
