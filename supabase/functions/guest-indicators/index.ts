@@ -318,10 +318,10 @@ Deno.serve(async (req) => {
     })).sort((a: any, b: any) => a.setor.localeCompare(b.setor, "pt-BR"));
 
     const total = sectors.reduce((a: any, s: any) => {
-      for (const k of ["total", "pacientesAVM", "diasAVM", "internadosDia", "diasComCenso", "totExt", "totRetot", "falhas48h", "extAvaliaveis", "extSucesso", "extPendentes", "autoextubacao", "acidental", "tqt", "obitos", "qtdIOTTQT"]) a[k] += Number(s[k]) || 0;
+      for (const k of ["total", "pacientesAVM", "diasAVM", "internadosDia", "diasComCenso", "totExt", "totRetot", "falhas48h", "extAvaliaveis", "extSucesso", "extPendentes", "autoextubacao", "acidental", "tqt", "obitos", "qtdIOTTQT", "diasIOTExt", "qtdIOTExt", "diasTQTDecanul", "qtdTQTDecanul"]) a[k] += Number(s[k]) || 0;
       a.diasIOTTQT += (Number(s.mediaIOTTQT) || 0) * (Number(s.qtdIOTTQT) || 0);
       return a;
-    }, { total: 0, pacientesAVM: 0, diasAVM: 0, internadosDia: 0, diasComCenso: 0, totExt: 0, totRetot: 0, falhas48h: 0, extAvaliaveis: 0, extSucesso: 0, extPendentes: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0, qtdIOTTQT: 0, diasIOTTQT: 0 });
+    }, { total: 0, pacientesAVM: 0, diasAVM: 0, internadosDia: 0, diasComCenso: 0, totExt: 0, totRetot: 0, falhas48h: 0, extAvaliaveis: 0, extSucesso: 0, extPendentes: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0, qtdIOTTQT: 0, diasIOTTQT: 0, diasIOTExt: 0, qtdIOTExt: 0, diasTQTDecanul: 0, qtdTQTDecanul: 0 });
     total.qtdPacientesAVM = total.pacientesAVM;
     total.mediaAVM = total.pacientesAVM > 0 ? total.diasAVM / total.pacientesAVM : null;
     total.txUtilizacao = total.internadosDia > 0 ? sectors.reduce((sum: number, s: any) => sum + (Number(s.txUtilizacao) || 0) * (Number(s.internadosDia) || 0) / 100, 0) / total.internadosDia * 100 : null;
@@ -331,6 +331,8 @@ Deno.serve(async (req) => {
     total.txTQT = total.total > 0 ? total.tqt / total.total * 100 : 0;
     total.txObito = total.total > 0 ? total.obitos / total.total * 100 : 0;
     total.mediaIOTTQT = total.qtdIOTTQT > 0 ? total.diasIOTTQT / total.qtdIOTTQT : null;
+    total.mediaIOTExt = total.qtdIOTExt > 0 ? total.diasIOTExt / total.qtdIOTExt : null;
+    total.mediaTQTDecanul = total.qtdTQTDecanul > 0 ? total.diasTQTDecanul / total.qtdTQTDecanul : null;
     total.desfechos = sectors.reduce((a: any, s: any) => {
       for (const k of ["ativos", "sucesso", "transferencia", "obitos"]) a[k] += Number(s.desfechos?.[k]) || 0;
       return a;
