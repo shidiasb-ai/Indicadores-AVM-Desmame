@@ -1437,7 +1437,7 @@
     function obterEventosAVM(p,inicio) {
       const ev=[{data:inicio,avm:true,ordem:0}];
       Object.entries(p?.historico||{}).forEach(([data,status])=>{
-        if(data>=inicio&&/^\d{4}-\d{2}-\d{2}$/.test(data))ev.push({data,avm:status==='AVM',ordem:2});
+        if(data>=inicio&&/^\d{4}-\d{2}-\d{2}$/.test(data)){const st=String(status||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');ev.push({data,avm:st==='AVM',ordem:2});}
       });
       (p?.ciclos||[]).forEach(c=>{
         const ext=String(c.dataExt||'').slice(0,10),ret=String(c.dataRetot||'').slice(0,10);
@@ -1461,8 +1461,9 @@
       // calculada a partir de eventos clínicos (inclusive extubação/RETOT).
       if(Object.prototype.hasOwnProperty.call(p.historico||{},dia)){
         const status=p.historico[dia];
-        if(status==='AVM')return true;
-        if(status==='RE'||status==='DESCONEXÃO')return false;
+        const statusNormalizado=String(status||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+        if(statusNormalizado==='AVM')return true;
+        if(statusNormalizado==='RE'||statusNormalizado==='DESCONEXAO')return false;
       }
       return estadoAVMNaData(eventos,dia);
     }
@@ -1524,7 +1525,7 @@
           const rowAdm=String(p.dataAdm||'').slice(0,10);
           if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!rowAdm||d<rowAdm)return;
           const v=String(status||'').toUpperCase(),old=historico[d];
-          const off=x=>x==='RE'||x==='DESCONEXÃO'||x==='DESCONEXAO';
+          const off=x=>{const n=String(x||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');return n==='RE'||n==='DESCONEXAO';};
           if(!old||off(v)||!off(old))historico[d]=v;
         }));
         const ciclosMap=new Map();
@@ -2520,7 +2521,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         item.extProg+=ev.programada;item.autoExt+=ev.auto;item.acidExt+=ev.acidental;
         item.naoProgNotificadas+=ev.notificadas;item.diasIOTExt+=ev.diasIOTExt;item.qtdIOTExt+=ev.qtdIOTExt;
         item.extAvaliaveis+=ev.avaliaveis;item.extSucesso+=ev.sucessos;
-        if(p.desfecho==='ÓBITO'&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
+        if(p.desfecho==='ÓBITO'&&contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
           const chave=s+'|'+chavePacienteIndicador(p);
           if(!obitosContadosDash.has(chave)){item.obitos++;obitosContadosDash.add(chave);}
         }
@@ -3045,7 +3046,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         stats[s].extAvaliaveis+=ev.avaliaveis;stats[s].extSucesso+=ev.sucessos;
         stats[s].autoextubacao+=ev.auto;stats[s].acidental+=ev.acidental;stats[s].naoProgNotificadas+=ev.notificadas;
         stats[s].diasIOTExt+=ev.diasIOTExt;stats[s].qtdIOTExt+=ev.qtdIOTExt;
-        if(p.desfecho==='ÓBITO'&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
+        if(p.desfecho==='ÓBITO'&&contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
           const chave=s+'|'+chavePacienteIndicador(p);
           if(!obitosContadosDados.has(chave)){stats[s].obitos++;obitosContadosDados.add(chave);}
         }
