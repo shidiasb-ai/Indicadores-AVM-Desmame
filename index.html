@@ -2242,26 +2242,23 @@
         statsPorSetor[s].totalPacientes++;
         statsPorSetor[s].diasAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
 
-        if (p.ciclos && p.ciclos.length > 0) {
-          p.ciclos.forEach(c => {
-            if ((!dtInicio || c.dataExt >= dtInicio) && (!dtFim || c.dataExt <= dtFim)) {
-              statsPorSetor[s].totExt++;
-              if (c.tipoExt === 'PROGRAMADA') statsPorSetor[s].extProg++;
-              else if (c.tipoExt === 'AUTOEXTUBACAO') { statsPorSetor[s].autoExt++; if(String(c.numeroNotificacao||'').trim())statsPorSetor[s].naoProgNotificadas++; }
-              else if (c.tipoExt === 'ACIDENTAL') { statsPorSetor[s].acidExt++; if(String(c.numeroNotificacao||'').trim())statsPorSetor[s].naoProgNotificadas++; }
-              const dExt=diasEntreDatasIOTeTQT(p.dataIOT,c.dataExt); if(dExt!==null){statsPorSetor[s].diasIOTExt+=dExt;statsPorSetor[s].qtdIOTExt++;}
-
-              if (c.teveRetot) {
-                statsPorSetor[s].totRetot++;
-                if (c.falha48h) statsPorSetor[s].falhas48h++;
-              }
-            }
-          });
-        }
-
-        if (p.desfecho === 'ÓBITO' && p.dataDesfecho && (!dtInicio||p.dataDesfecho>=dtInicio) && (!dtFim||p.dataDesfecho<=dtFim)) statsPorSetor[s].obitos++;
-        if (p.dataTQT && (!dtInicio||p.dataTQT>=dtInicio) && (!dtFim||p.dataTQT<=dtFim)) statsPorSetor[s].tqt++;
+      });
+      pacientes.forEach(p => {
+        const s=p.setor;
+        if(!statsPorSetor[s])return;
+        (p.ciclos||[]).forEach(c=>{
+          if((dtInicio&&(!c.dataExt||c.dataExt<dtInicio))||(dtFim&&(!c.dataExt||c.dataExt>dtFim)))return;
+          const item=statsPorSetor[s]; item.totExt++;
+          if(c.tipoExt==='PROGRAMADA')item.extProg++;
+          else if(c.tipoExt==='AUTOEXTUBACAO'){item.autoExt++;if(String(c.numeroNotificacao||'').trim())item.naoProgNotificadas++;}
+          else if(c.tipoExt==='ACIDENTAL'){item.acidExt++;if(String(c.numeroNotificacao||'').trim())item.naoProgNotificadas++;}
+          const de=diasEntreDatasIOTeTQT(p.dataIOT,c.dataExt);if(de!==null){item.diasIOTExt+=de;item.qtdIOTExt++;}
+          if(c.teveRetot){item.totRetot++;if(c.falha48h)item.falhas48h++;}
+        });
+        if(p.desfecho==='ÓBITO'&&p.dataDesfecho&&(!dtInicio||p.dataDesfecho>=dtInicio)&&(!dtFim||p.dataDesfecho<=dtFim))statsPorSetor[s].obitos++;
+        if(p.dataTQT&&(!dtInicio||p.dataTQT>=dtInicio)&&(!dtFim||p.dataTQT<=dtFim))statsPorSetor[s].tqt++;
         if(p.dataDecanul&&p.dataTQT&&(!dtInicio||p.dataDecanul>=dtInicio)&&(!dtFim||p.dataDecanul<=dtFim)){const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);if(dd!==null){statsPorSetor[s].diasTQTDecanul+=dd;statsPorSetor[s].qtdTQTDecanul++;}}
+      });
       });
 
       // Tempo IOT–TQT e total de TQT: considerar a data da TQT no período selecionado,
@@ -2739,23 +2736,19 @@
         stats[s].pacientesAVM++;
         stats[s].diasAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
 
-        if (p.ciclos && p.ciclos.length > 0) {
-          p.ciclos.forEach(c => {
-            if (dtInicio && (!c.dataExt || c.dataExt < dtInicio)) return;
-            if (dtFim && (!c.dataExt || c.dataExt > dtFim)) return;
-            stats[s].totExt++;
-            if (c.tipoExt === 'AUTOEXTUBACAO') {stats[s].autoextubacao++;if(String(c.numeroNotificacao||'').trim())stats[s].naoProgNotificadas++;}
-            else if (c.tipoExt === 'ACIDENTAL') {stats[s].acidental++;if(String(c.numeroNotificacao||'').trim())stats[s].naoProgNotificadas++;}
-            const de=diasEntreDatasIOTeTQT(p.dataIOT,c.dataExt);if(de!==null){stats[s].diasIOTExt+=de;stats[s].qtdIOTExt++;}
-
-            if (c.teveRetot) {
-              stats[s].totRetot++;
-              if (c.falha48h) stats[s].falhas48h++;
-            }
-          });
-        }
-
-        if (p.desfecho === 'ÓBITO' && p.dataDesfecho && (!dtInicio||p.dataDesfecho>=dtInicio) && (!dtFim||p.dataDesfecho<=dtFim)) stats[s].obitos++;
+      });
+      pacientes.forEach(p=>{
+        const s=stats[p.setor]?p.setor:SETORES_ATIVOS[0]; if(!stats[s])return;
+        (p.ciclos||[]).forEach(c=>{
+          if((dtInicio&&(!c.dataExt||c.dataExt<dtInicio))||(dtFim&&(!c.dataExt||c.dataExt>dtFim)))return;
+          stats[s].totExt++;
+          if(c.tipoExt==='AUTOEXTUBACAO'){stats[s].autoextubacao++;if(String(c.numeroNotificacao||'').trim())stats[s].naoProgNotificadas++;}
+          else if(c.tipoExt==='ACIDENTAL'){stats[s].acidental++;if(String(c.numeroNotificacao||'').trim())stats[s].naoProgNotificadas++;}
+          const de=diasEntreDatasIOTeTQT(p.dataIOT,c.dataExt);if(de!==null){stats[s].diasIOTExt+=de;stats[s].qtdIOTExt++;}
+          if(c.teveRetot){stats[s].totRetot++;if(c.falha48h)stats[s].falhas48h++;}
+        });
+        if(p.desfecho==='ÓBITO'&&p.dataDesfecho&&(!dtInicio||p.dataDesfecho>=dtInicio)&&(!dtFim||p.dataDesfecho<=dtFim))stats[s].obitos++;
+      });
       });
 
       // Indicador IOT–TQT: incluir casos pela data de realização da TQT no período.
