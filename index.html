@@ -3617,7 +3617,8 @@
     }
 
     function exportarWord() {
-      if (pacientes.length === 0) return alert('Sem dados para exportar.');
+      const lista=filtrarPacientesExportacao();
+      if (!lista.length) return alert('Não há registros no período selecionado.');
 
       const dt = new Date().toLocaleDateString('pt-BR');
       let html = `
@@ -3643,31 +3644,23 @@
                 <th>Prontuário</th>
                 <th>Data IOT</th>
                 <th>Dias AVM</th>
-                <th>Ciclos Ext.</th>
-                <th>TQT</th>
+                <th>Histórico de Ciclos Ext/RETOT</th>
+                <th>TQT / Decanul.</th>
                 <th>Desfecho</th>
-                <th>Data Desfecho</th>
               </tr>
             </thead>
             <tbody>
       `;
 
-      pacientes.forEach(p => {
-        const qtdExt = p.ciclos ? p.ciclos.length : 0;
-        const qtdRet = p.ciclos ? p.ciclos.filter(c => c.teveRetot).length : 0;
+      lista.forEach(p => {
         html += `
           <tr>
-            <td><strong>${p.nome || ''}</strong></td>
-            <td>${p.setor || ''}</td>
-            <td>${p.registro || '-'}</td>
-            <td>${formatarData(p.dataIOT)}</td>
-            <td>${p.tempoAVM || 0} dias</td>
-            <td>${qtdExt} ext. / ${qtdRet} retot</td>
-            <td>${p.dataTQT ? formatarData(p.dataTQT) : '-'}</td>
+            <td><strong>${p.nome || ''}</strong></td><td>${p.setor || ''}</td><td>${p.registro || '-'}</td>
+            <td>${formatarData(p.dataIOT)}</td><td>${calcularDiasAVMAtual(p)}</td>
+            <td>${resumoCiclosExportacao(p)}</td>
+            <td>TQT: ${formatarData(p.dataTQT)} / Decanul.: ${formatarData(p.dataDecanul)}</td>
             <td>${p.desfecho || ''}</td>
-            <td>${formatarData(p.dataDesfecho)}</td>
-          </tr>
-        `;
+          </tr>`;
       });
 
       html += `</tbody></table></body></html>`;
@@ -3677,7 +3670,8 @@
     }
 
     function exportarPDF() {
-      if (pacientes.length === 0) return alert('Sem dados para exportar.');
+      const lista=filtrarPacientesExportacao();
+      if (!lista.length) return alert('Não há registros no período selecionado.');
 
       if (window.jspdf && window.jspdf.jsPDF) {
         const { jsPDF } = window.jspdf;
@@ -3691,17 +3685,10 @@
         doc.setTextColor(100);
         doc.text(`Saúde Funcional • Indicadores de AVM e Desmame Ventilatório • Emitido em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 22);
 
-        const colunas = ["Paciente / Leito", "Setor", "Prontuário", "IOT", "Dias AVM", "Extub.", "RETOT", "TQT", "Desfecho"];
-        const linhas = pacientes.map(p => [
-          p.nome || '',
-          p.setor || '',
-          p.registro || '-',
-          formatarData(p.dataIOT),
-          `${p.tempoAVM || 0} d`,
-          p.ciclos ? p.ciclos.length.toString() : '0',
-          p.ciclos ? p.ciclos.filter(c => c.teveRetot).length.toString() : '0',
-          p.dataTQT ? formatarData(p.dataTQT) : '-',
-          p.desfecho || ''
+        const colunas = ["Paciente / Leito","Setor","Prontuário","Data IOT","Dias AVM","Histórico de Ciclos Ext/RETOT","TQT / Decanul.","Desfecho"];
+        const linhas = lista.map(p => [
+          p.nome||'',p.setor||'',p.registro||'-',formatarData(p.dataIOT),String(calcularDiasAVMAtual(p)),
+          resumoCiclosExportacao(p),'TQT: '+formatarData(p.dataTQT)+' / Decanul.: '+formatarData(p.dataDecanul),p.desfecho||''
         ]);
 
         doc.autoTable({
