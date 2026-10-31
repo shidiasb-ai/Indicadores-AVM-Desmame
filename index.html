@@ -552,7 +552,12 @@
         <div class="kpi-card">
           <div class="kpi-title">Total Pacientes-Dia AVM</div>
           <div class="kpi-num" id="dashPacientesDia">0 d</div>
-          <div class="kpi-desc">Dias em VM invasiva</div>
+          <div class="kpi-desc">Soma dos dias em VM invasiva no período</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Tempo médio de AVM</div>
+          <div class="kpi-num" id="dashTempoMedioAVM">—</div>
+          <div class="kpi-desc" id="dashTempoMedioAVMSub">Duração média dos episódios dos pacientes no período</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-title">Taxa de Traqueostomia</div>
@@ -635,12 +640,12 @@
           </div>
         </div>
 
-        <div class="chart-box">
+        <div class="chart-box" style="min-height:380px;">
           <div class="chart-box-title">
             <span>7. Evolução Diária: Em AVM vs Total Internados</span>
             <span class="tag">Tendência temporal consolidada</span>
           </div>
-          <div class="chart-container">
+          <div class="chart-container" style="min-height:310px;">
             <canvas id="graficoEvolucaoAVM"></canvas>
           </div>
         </div>
@@ -684,9 +689,9 @@
             <thead>
               <tr>
                 <th>Setor / Unidade</th>
-                <th>Pacientes em AVM</th>
-                <th>AVM-Dia</th>
-                <th>Internados-Dia</th>
+                <th title="Número de pacientes distintos com pelo menos um dia de AVM no período e setor selecionados">Pacientes em AVM</th>
+                <th title="Soma dos dias em ventilação mecânica invasiva dentro do período selecionado">AVM-Dia</th>
+                <th>Tempo médio de AVM (dias)</th>
                 <th>Tx. Utilização AVM</th>
                 <th>Total Extubações</th>
                 <th>Total RETOTs</th>
@@ -1416,30 +1421,54 @@
 
     function obterInicioAVMNoSetor(p) {
       if (!p) return '';
-      const adm = String(p.dataAdm || '').slice(0,10), iot = String(p.dataIOT || '').slice(0,10);
-      if (iot && (!adm || iot >= adm)) return iot;
-      if (iot && adm && iot < adm) return Object.keys(p.historico||{}).filter(d=>d>=adm&&p.historico[d]==='AVM').sort()[0] || '';
-      return Object.keys(p.historico||{}).filter(d=>p.historico[d]==='AVM').sort()[0] || '';
+      const adm=String(p.dataAdm||'').slice(0,10), iot=String(p.dataIOT||'').slice(0,10);
+      const diasHistorico=Object.keys(p.historico||{}).filter(d=>/^\\d{4}-\\d{2}-\\d{2}$/.test(d)&&p.historico[d]==='AVM'&&(!adm||d>=adm)).sort();
+      if(iot&&(!adm||iot>=adm))return iot;
+      if(adm)return diasHistorico[0]||'';
+      return iot||diasHistorico[0]||'';
     }
-    function estadoAVMNaData(p, dia, inicio) {
+    function obterEventosAVM(p,inicio) {
       const ev=[{data:inicio,avm:true,ordem:0}];
-      Object.entries(p.historico||{}).forEach(([data,status])=>{if(data>=inicio)ev.push({data,avm:status==='AVM',ordem:2});});
-      (p.ciclos||[]).forEach(c=>{if(c.dataExt>=inicio)ev.push({data:c.dataExt,avm:false,ordem:1});if(c.teveRetot&&c.dataRetot>=inicio)ev.push({data:c.dataRetot,avm:true,ordem:1});});
+      Object.entries(p?.historico||{}).forEach(([data,status])=>{
+        if(data>=inicio&&/^\\d{4}-\\d{2}-\\d{2}$/.test(data))ev.push({data,avm:status==='AVM',ordem:2});
+      });
+      (p?.ciclos||[]).forEach(c=>{
+        const ext=String(c.dataExt||'').slice(0,10),ret=String(c.dataRetot||'').slice(0,10);
+        if(ext>=inicio&&/^\\d{4}-\\d{2}-\\d{2}$/.test(ext))ev.push({data:ext,avm:false,ordem:1});
+        if(c.teveRetot&&ret>=inicio&&/^\\d{4}-\\d{2}-\\d{2}$/.test(ret))ev.push({data:ret,avm:true,ordem:1});
+      });
       ev.sort((a,b)=>a.data.localeCompare(b.data)||a.ordem-b.ordem);
-      let estado=false; ev.forEach(e=>{if(e.data<=dia)estado=e.avm;}); return estado;
+      return ev;
     }
-    function contarAVMDiasNoPeriodo(p, inicioPeriodo, fimPeriodo) {
+    function estadoAVMNoInicioDoDia(eventos,dia) {
+      let estado=false;
+      eventos.forEach(e=>{if(e.data<dia)estado=e.avm;});
+      return estado;
+    }
+    function pacienteEmAVMNaData(p,dia,inicio=obterInicioAVMNoSetor(p)) {
+      if(!inicio||dia<inicio)return false;
+      const eventos=obterEventosAVM(p,inicio);
+      return estadoAVMNoInicioDoDia(eventos,dia)||eventos.some(e=>e.data===dia&&e.avm);
+    }
+    function contarAVMDiasNoPeriodo(p,inicioPeriodo,fimPeriodo) {
       if(!p||!inicioPeriodo||!fimPeriodo||fimPeriodo<inicioPeriodo)return 0;
-      const inicioAVM=obterInicioAVMNoSetor(p); if(!inicioAVM)return 0;
+      const inicioAVM=obterInicioAVMNoSetor(p);if(!inicioAVM)return 0;
       const hoje=obterDataLocalISO();
       const fimClinico=p.desfecho&&p.desfecho!=='ATIVO'&&p.dataDesfecho?String(p.dataDesfecho).slice(0,10):hoje;
       const inicio=inicioAVM>inicioPeriodo?inicioAVM:inicioPeriodo;
-      const fim=[fimPeriodo,fimClinico,hoje].sort()[0]; if(fim<inicio)return 0;
-      let total=0;
+      const fim=[fimPeriodo,fimClinico,hoje].sort()[0];if(fim<inicio)return 0;
+      const eventos=obterEventosAVM(p,inicioAVM);let total=0;
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
-        if(estadoAVMNaData(p,d.toISOString().slice(0,10),inicioAVM))total++;
+        const dia=d.toISOString().slice(0,10);
+        if(estadoAVMNoInicioDoDia(eventos,dia)||eventos.some(e=>e.data===dia&&e.avm))total++;
       }
       return total;
+    }
+    function calcularTempoTotalAVM(p) {
+      const inicio=obterInicioAVMNoSetor(p);if(!inicio)return 0;
+      const hoje=obterDataLocalISO();
+      const fimClinico=p.desfecho&&p.desfecho!=='ATIVO'&&p.dataDesfecho?String(p.dataDesfecho).slice(0,10):hoje;
+      return contarAVMDiasNoPeriodo(p,inicio,[fimClinico,hoje].sort()[0]);
     }
     function calcularDiasAVMAtual(p, dataReferencia=obterDataLocalISO()) {
       const inicio=obterInicioAVMNoSetor(p); return inicio?contarAVMDiasNoPeriodo(p,inicio,dataReferencia):(Number(p?.tempoAVM)||0);
@@ -1503,6 +1532,8 @@
       document.getElementById('dashTaxaFalha').textContent = formatarPercentualAgregado(t.txFalha);
       document.getElementById('dashFalhaSub').textContent = `${t.falhas48h || 0} falhas <48h`;
       document.getElementById('dashPacientesDia').textContent = `${t.diasAVM || 0} d`;
+      document.getElementById('dashTempoMedioAVM').textContent=t.mediaAVM==null?'—':`${Number(t.mediaAVM).toFixed(1)} d`;
+      document.getElementById('dashTempoMedioAVMSub').textContent=t.qtdPacientesAVM>0?`Média de ${t.qtdPacientesAVM} pacientes distintos com AVM no período`:'Sem pacientes com AVM no período';
       document.getElementById('dashTaxaTQT').textContent = formatarPercentualAgregado(t.txTQT);
       document.getElementById('dashTQTSub').textContent = `${t.tqt || 0} traqueostomias`;
       document.getElementById('dashTempoIOTTQT').textContent = t.mediaIOTTQT == null ? '—' : `${Number(t.mediaIOTTQT).toFixed(1)} d`;
@@ -1541,7 +1572,7 @@
         const media = item.mediaIOTTQT == null ? '—' : `${Number(item.mediaIOTTQT).toFixed(1)} d`;
         tbody.innerHTML += `<tr>
           <td><strong>${escaparHtml(item.setor)}</strong></td>
-          <td>${item.total || 0}</td><td>${item.diasAVM || 0} d</td><td>${item.internadosDia || 0} d</td>
+          <td>${item.total || 0}</td><td>${item.diasAVM || 0} d</td><td><strong>${item.mediaAVM==null?'—':Number(item.mediaAVM).toFixed(1)+' d'}</strong></td>
           <td><strong>${formatarPercentualAgregado(item.txUtilizacao)}</strong></td>
           <td>${item.totExt || 0}</td><td>${item.totRetot || 0}</td><td>${item.falhas48h || 0}</td>
           <td>${formatarPercentualAgregado(item.txSucesso)}</td><td>${item.autoextubacao || 0}</td><td>${item.acidental || 0}</td>
@@ -2289,6 +2320,7 @@
       });
 
       let globDiasAVM = 0;
+      let globDiasTotalAVM=0;
       let globInternadosDia = 0;
       let globTotExt = 0;
       let globExtProg = 0;
@@ -2303,6 +2335,7 @@
       setoresFiltro.forEach(s => {
         const item = statsPorSetor[s];
         globDiasAVM += item.diasAVM;
+        globDiasTotalAVM += item.diasTotalAVM;
         globInternadosDia += item.internadosDia;
         globTotExt += item.totExt;
         globExtProg += item.extProg;
@@ -2340,6 +2373,8 @@
       document.getElementById('dashFalhaSub').textContent = `${globFalhas48h} falhas <48h`;
 
       document.getElementById('dashPacientesDia').textContent = `${globDiasAVM} d`;
+      document.getElementById('dashTempoMedioAVM').textContent=pacFiltrados.length?(globDiasTotalAVM/pacFiltrados.length).toFixed(1)+' d':'—';
+      document.getElementById('dashTempoMedioAVMSub').textContent=pacFiltrados.length?`Média de ${pacFiltrados.length} pacientes distintos com AVM no período`:'Sem pacientes com AVM no período';
       document.getElementById('dashTaxaTQT').textContent = `${globTxTQT}%`;
       document.getElementById('dashTQTSub').textContent = `${globTQT} traqueostomias`;
 
@@ -2601,11 +2636,9 @@
         datasEvol.push(new Date(dataCursor.getTime() - dataCursor.getTimezoneOffset() * 60000).toISOString().slice(0, 10));
       }
       const diasMes = datasEvol.map(d => d.slice(8, 10) + '/' + d.slice(5, 7));
-      const valoresAVM = datasEvol.map(dia => pacFiltrados.filter(p => {
-        const iot = String(p.dataIOT || '').slice(0, 10);
-        const fim = String(p.dataDesfecho || '').slice(0, 10);
-        return iot && iot <= dia && (!fim || fim >= dia) && (!p.desfecho || p.desfecho === 'ATIVO' || !fim || fim >= dia);
-      }).length);
+      const valoresAVM = datasEvol.map(dia => pacientes.filter(p =>
+        setores.includes(p.setor) && pacienteEmAVMNaData(p,dia)
+      ).length);
       const valoresInternados = datasEvol.map(dia => {
         if (!censoInternados[dia]) return null;
         return setores.reduce((sum, setor) => {
@@ -2726,6 +2759,7 @@
           diasAVM: 0,
           pacientesAVM: 0,
           internadosDia: 0,
+          diasTotalAVM:0,
           naoProgNotificadas:0,diasIOTExt:0,qtdIOTExt:0,diasTQTDecanul:0,qtdTQTDecanul:0,
           totExt: 0,
           totRetot: 0,
@@ -2748,6 +2782,7 @@
         stats[s].total++;
         stats[s].pacientesAVM++;
         stats[s].diasAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
+        stats[s].diasTotalAVM += calcularTempoTotalAVM(p);
 
       });
       pacientes.forEach(p=>{
@@ -2801,7 +2836,7 @@
             <td><strong>${set}</strong></td>
             <td>${item.pacientesAVM}</td>
             <td>${item.diasAVM} d</td>
-            <td>${internadosDia} d</td>
+            <td><strong>${item.pacientesAVM>0?(item.diasTotalAVM/item.pacientesAVM).toFixed(1)+' d':'—'}</strong></td>
             <td><strong style="color: var(--primary);">${txUtilizacao}</strong></td>
             <td><strong>${item.totExt}</strong></td>
             <td><strong style="color: var(--danger);">${item.totRetot}</strong></td>
