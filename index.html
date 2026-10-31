@@ -1423,6 +1423,8 @@
       if (!p) return '';
       const adm=String(p.dataAdm||'').slice(0,10), iot=String(p.dataIOT||'').slice(0,10);
       const diasHistorico=Object.keys(p.historico||{}).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&p.historico[d]==='AVM'&&(!adm||d>=adm)).sort();
+      // Regra institucional: usar IOT se ocorreu durante a internação no setor;
+      // se a IOT antecede a admissão, iniciar no primeiro senso AVM daquele setor.
       if(iot&&(!adm||iot>=adm))return iot;
       if(adm)return diasHistorico[0]||'';
       return iot||diasHistorico[0]||'';
@@ -1449,7 +1451,15 @@
       if(!inicio||dia<inicio||dia>obterDataLocalISO())return false;
       const fimClinico=p.desfecho&&p.desfecho!=='ATIVO'&&p.dataDesfecho?String(p.dataDesfecho).slice(0,10):'';
       if(fimClinico&&dia>fimClinico)return false;
-      return estadoAVMNaData(obterEventosAVM(p,inicio),dia);
+      const eventos=obterEventosAVM(p,inicio);
+      // Se houve apontamento explícito na data, ele prevalece sobre a situação
+      // calculada a partir de eventos clínicos (inclusive extubação/RETOT).
+      if(Object.prototype.hasOwnProperty.call(p.historico||{},dia)){
+        const status=p.historico[dia];
+        if(status==='AVM')return true;
+        if(status==='RE'||status==='DESCONEXÃO')return false;
+      }
+      return estadoAVMNaData(eventos,dia);
     }
     function contarAVMDiasNoPeriodo(p,inicioPeriodo,fimPeriodo) {
       if(!p||!inicioPeriodo||!fimPeriodo||fimPeriodo<inicioPeriodo)return 0;
