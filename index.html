@@ -564,6 +564,9 @@
           <div class="kpi-num" id="dashTempoIOTTQT">—</div>
           <div class="kpi-desc" id="dashTempoIOTTQTSub">Média em dias entre intubação e traqueostomia</div>
         </div>
+        <div class="kpi-card"><div class="kpi-title">Tempo médio IOT–Extubação</div><div class="kpi-num" id="dashTempoIOTExt">—</div><div class="kpi-desc" id="dashTempoIOTExtSub">Média no período</div></div>
+        <div class="kpi-card"><div class="kpi-title">Tempo médio TQT–Decanulação</div><div class="kpi-num" id="dashTempoTQTDecanul">—</div><div class="kpi-desc" id="dashTempoTQTDecanulSub">Média no período</div></div>
+        <div class="kpi-card"><div class="kpi-title">% Extubações não programadas notificadas</div><div class="kpi-num" id="dashPercNotificadas">—</div><div class="kpi-desc" id="dashPercNotificadasSub">Notificadas / não programadas</div></div>
         <div class="kpi-card">
           <div class="kpi-title">Mortalidade em AVM</div>
           <div class="kpi-num" id="dashTaxaObito">0.0%</div>
@@ -681,7 +684,7 @@
             <thead>
               <tr>
                 <th>Setor / Unidade</th>
-                <th>Pacientes</th>
+                <th>Pacientes em AVM</th>
                 <th>AVM-Dia</th>
                 <th>Internados-Dia</th>
                 <th>Tx. Utilização AVM</th>
@@ -694,6 +697,9 @@
                 <th>Tx. Não Prog.</th>
                 <th>TQT</th>
                 <th>Tempo médio IOT–TQT (dias)</th>
+                <th>Tempo médio IOT–Extubação (dias)</th>
+                <th>Tempo médio TQT–Decanulação (dias)</th>
+                <th>% Extubações não programadas notificadas</th>
                 <th>Óbitos</th>
               </tr>
             </thead>
@@ -1076,6 +1082,10 @@
             <input type="date" id="novoCicloDataExt" class="form-ctrl">
           </div>
           <div class="form-group">
+            <label>Número da Notificação (quando não programada)</label>
+            <input type="text" id="novoCicloNumeroNotificacao" class="form-ctrl" placeholder="Número da notificação">
+          </div>
+          <div class="form-group">
             <label>Tipo de Extubação *</label>
             <select id="novoCicloTipoExt" class="form-ctrl">
               <option value="PROGRAMADA">Programada (Planejada)</option>
@@ -1168,7 +1178,7 @@
     // A publishable key pode estar no frontend; nunca coloque service_role/secret aqui.
     const SUPABASE_URL = 'https://osgvhdgnnoxnvtyccwtu.supabase.co';
     const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9_DuTxxCw2PQNVPhHJi6hw_ZesUJbBI';
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
 
     if (window.ChartDataLabels) {
       Chart.register(ChartDataLabels);
@@ -1390,31 +1400,46 @@
       return Math.floor((fim - inicio) / 86400000) + 1;
     }
 
-    function pacientePermiteCalculoDiretoPorIOT(p) {
-      if (!p || p.desfecho !== 'ATIVO' || (p.statusHoje && p.statusHoje !== 'AVM')) return false;
-      if (Array.isArray(p.ciclos) && p.ciclos.length > 0) return false;
-      const historico = Object.values(p.historico || {});
-      // Havendo RE/desconexão registrados, não presumimos dias ventilados nesses intervalos.
-      if (historico.some(status => status && status !== 'AVM')) return false;
-      return Boolean(p.dataIOT);
+    function obterInicioAVMNoSetor(p) {
+      if (!p) return '';
+      const adm = String(p.dataAdm || '').slice(0,10), iot = String(p.dataIOT || '').slice(0,10);
+      if (iot && (!adm || iot >= adm)) return iot;
+      if (iot && adm && iot < adm) return Object.keys(p.historico||{}).filter(d=>d>=adm&&p.historico[d]==='AVM').sort()[0] || '';
+      return Object.keys(p.historico||{}).filter(d=>p.historico[d]==='AVM').sort()[0] || '';
     }
-
-    function calcularDiasAVMAtual(p, dataReferencia = obterDataLocalISO()) {
-      if (!p) return 0;
-      const historico = Object.values(p.historico || {});
-      const diasApontados = historico.filter(status => status === 'AVM').length;
-      let dias = Math.max(Number(p.tempoAVM) || 0, diasApontados);
-      if (pacientePermiteCalculoDiretoPorIOT(p)) {
-        const desdeIOT = contarDiasInclusivos(p.dataIOT, dataReferencia);
-        if (desdeIOT !== null) dias = Math.max(dias, desdeIOT);
+    function estadoAVMNaData(p, dia, inicio) {
+      const ev=[{data:inicio,avm:true,ordem:0}];
+      Object.entries(p.historico||{}).forEach(([data,status])=>{if(data>=inicio)ev.push({data,avm:status==='AVM',ordem:2});});
+      (p.ciclos||[]).forEach(c=>{if(c.dataExt>=inicio)ev.push({data:c.dataExt,avm:false,ordem:1});if(c.teveRetot&&c.dataRetot>=inicio)ev.push({data:c.dataRetot,avm:true,ordem:1});});
+      ev.sort((a,b)=>a.data.localeCompare(b.data)||a.ordem-b.ordem);
+      let estado=false; ev.forEach(e=>{if(e.data<=dia)estado=e.avm;}); return estado;
+    }
+    function contarAVMDiasNoPeriodo(p, inicioPeriodo, fimPeriodo) {
+      if(!p||!inicioPeriodo||!fimPeriodo||fimPeriodo<inicioPeriodo)return 0;
+      const inicioAVM=obterInicioAVMNoSetor(p); if(!inicioAVM)return 0;
+      const hoje=obterDataLocalISO();
+      const fimClinico=p.desfecho&&p.desfecho!=='ATIVO'&&p.dataDesfecho?String(p.dataDesfecho).slice(0,10):hoje;
+      const inicio=inicioAVM>inicioPeriodo?inicioAVM:inicioPeriodo;
+      const fim=[fimPeriodo,fimClinico,hoje].sort()[0]; if(fim<inicio)return 0;
+      let total=0;
+      for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
+        if(estadoAVMNaData(p,d.toISOString().slice(0,10),inicioAVM))total++;
       }
-      return dias;
+      return total;
     }
-
+    function calcularDiasAVMAtual(p, dataReferencia=obterDataLocalISO()) {
+      const inicio=obterInicioAVMNoSetor(p); return inicio?contarAVMDiasNoPeriodo(p,inicio,dataReferencia):(Number(p?.tempoAVM)||0);
+    }
     function atualizarDiasAVMDoPaciente(p) {
-      const dias = calcularDiasAVMAtual(p);
-      if (p && dias > (Number(p.tempoAVM) || 0)) p.tempoAVM = dias;
-      return dias;
+      const dias=calcularDiasAVMAtual(p); if(p&&obterInicioAVMNoSetor(p))p.tempoAVM=dias; return dias;
+    }
+    function somarInternadosDiaSetor(setor,inicio,fim) {
+      if(!inicio||!fim||fim<inicio)return 0; let total=0;
+      for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
+        const dia=d.toISOString().slice(0,10), valor=censoInternados[dia]?.[setor];
+        if(valor!==undefined&&valor!==null&&valor!=='')total+=Math.max(0,Number(valor)||0);
+        else if(dia<'2026-10-29')total+=10;
+      } return total;
     }
 
     // Corrige somente pacientes ativos em AVM contínua, sem ciclos ou interrupções documentadas.
@@ -1424,7 +1449,7 @@
       pacientes.forEach(p => {
         const antes = Number(p.tempoAVM) || 0;
         const depois = atualizarDiasAVMDoPaciente(p);
-        if (p.desfecho === 'ATIVO' && depois > antes) alterados.push(p);
+        if (obterInicioAVMNoSetor(p) && depois !== antes) alterados.push(p);
       });
       if (!alterados.length || !usuarioLogado || usuarioLogado.perfil === 'convidado') return 0;
 
@@ -1855,7 +1880,7 @@
       const container = document.getElementById('setoresCensoContainer');
       if (!container) return;
       const dataRonda = document.getElementById('dataRonda').value || obterDataLocalISO();
-      const ativos = pacientes.filter(p => p.desfecho === 'ATIVO');
+      const ativos = pacientes.filter(p => p.desfecho === 'ATIVO').sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR',{sensitivity:'base'}));
 
       const setoresExibidos = [...SETORES_ATIVOS];
       ativos.forEach(p => {
@@ -1981,6 +2006,7 @@
       document.getElementById('modalCiclosPacienteNome').textContent = `${p.nome} • Setor: ${p.setor} • IOT: ${formatarData(p.dataIOT)}`;
 
       document.getElementById('novoCicloDataExt').value = dataRonda;
+      document.getElementById('novoCicloNumeroNotificacao').value = '';
       document.getElementById('novoCicloTipoExt').value = 'PROGRAMADA';
       document.getElementById('novoCicloTeveRetot').value = 'NAO';
       document.getElementById('novoCicloDataRetot').value = dataRonda;
@@ -2020,7 +2046,7 @@
           <div class="timeline-item">
             <div>
               <strong style="color: var(--primary);">${c.ciclo}ª Extubação:</strong>
-              <span>${formatarData(c.dataExt)} (${rotuloTipo})</span>
+              <span>${formatarData(c.dataExt)} (${rotuloTipo})${c.numeroNotificacao ? ` • Notificação: ${escaparHtml(c.numeroNotificacao)}` : ''}</span>
               <div style="margin-top: 3px;">${badgeRetot}</div>
             </div>
             <button class="btn btn-danger" style="padding: 2px 6px; font-size: 0.68rem;" onclick="excluirCiclo(${idx})">Remover</button>
@@ -2050,6 +2076,7 @@
         ciclo: numCiclo,
         dataExt: dtExt,
         tipoExt: tipoExt,
+        numeroNotificacao: document.getElementById('novoCicloNumeroNotificacao').value.trim(),
         teveRetot: teveRetot,
         dataRetot: dtRetot,
         falha48h: falha48h
@@ -2172,7 +2199,7 @@
       const inicio = new Date(String(dataIOT).slice(0, 10) + 'T00:00:00');
       const fim = new Date(String(dataTQT).slice(0, 10) + 'T00:00:00');
       if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime()) || fim < inicio) return null;
-      return Math.round((fim - inicio) / 86400000);
+      return Math.floor((Date.UTC(fim.getFullYear(),fim.getMonth(),fim.getDate())-Date.UTC(inicio.getFullYear(),inicio.getMonth(),inicio.getDate()))/86400000);
     }
 
     function atualizarDashboard() {
@@ -2188,20 +2215,14 @@
       const dtFim = document.getElementById('filtroDashFim').value;
       const setoresFiltro = [...setoresSelecionadosDash];
 
-      const pacFiltrados = pacientes.filter(p => {
-        if (!setoresFiltro.includes(p.setor)) return false;
-        if (dtInicio && p.dataIOT && p.dataIOT < dtInicio) {
-          if (p.dataDesfecho && p.dataDesfecho < dtInicio) return false;
-        }
-        if (dtFim && p.dataIOT && p.dataIOT > dtFim) return false;
-        return true;
-      });
+      const pacFiltrados = pacientes.filter(p => setoresFiltro.includes(p.setor) && contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
 
       const statsPorSetor = {};
       setoresFiltro.forEach(s => {
         statsPorSetor[s] = {
           diasAVM: 0,
           totalPacientes: 0,
+          naoProgNotificadas: 0, diasIOTExt: 0, qtdIOTExt: 0, diasTQTDecanul: 0, qtdTQTDecanul: 0,
           totExt: 0,
           extProg: 0,
           autoExt: 0,
@@ -2214,32 +2235,21 @@
         };
       });
 
-      const d1 = dtInicio ? new Date(dtInicio) : new Date('2026-10-01');
-      const d2 = dtFim ? new Date(dtFim) : new Date('2026-10-27');
-      // Internados-Dia soma apenas censos reais registrados; não estima dias sem registro pela capacidade.
-      Object.keys(censoInternados).forEach(dia => {
-        if ((!dtInicio || dia >= dtInicio) && (!dtFim || dia <= dtFim)) {
-          setoresFiltro.forEach(s => {
-            const valor = censoInternados[dia]?.[s];
-            if (valor !== undefined && valor !== null && valor !== '') {
-              statsPorSetor[s].internadosDia += Math.max(0, Number(valor) || 0);
-            }
-          });
-        }
-      });
+      setoresFiltro.forEach(s=>{statsPorSetor[s].internadosDia=somarInternadosDiaSetor(s,dtInicio,dtFim);});
 
       pacFiltrados.forEach(p => {
         const s = statsPorSetor[p.setor] ? p.setor : setoresFiltro[0];
         statsPorSetor[s].totalPacientes++;
-        statsPorSetor[s].diasAVM += atualizarDiasAVMDoPaciente(p);
+        statsPorSetor[s].diasAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
 
         if (p.ciclos && p.ciclos.length > 0) {
           p.ciclos.forEach(c => {
             if ((!dtInicio || c.dataExt >= dtInicio) && (!dtFim || c.dataExt <= dtFim)) {
               statsPorSetor[s].totExt++;
               if (c.tipoExt === 'PROGRAMADA') statsPorSetor[s].extProg++;
-              else if (c.tipoExt === 'AUTOEXTUBACAO') statsPorSetor[s].autoExt++;
-              else if (c.tipoExt === 'ACIDENTAL') statsPorSetor[s].acidExt++;
+              else if (c.tipoExt === 'AUTOEXTUBACAO') { statsPorSetor[s].autoExt++; if(String(c.numeroNotificacao||'').trim())statsPorSetor[s].naoProgNotificadas++; }
+              else if (c.tipoExt === 'ACIDENTAL') { statsPorSetor[s].acidExt++; if(String(c.numeroNotificacao||'').trim())statsPorSetor[s].naoProgNotificadas++; }
+              const dExt=diasEntreDatasIOTeTQT(p.dataIOT,c.dataExt); if(dExt!==null){statsPorSetor[s].diasIOTExt+=dExt;statsPorSetor[s].qtdIOTExt++;}
 
               if (c.teveRetot) {
                 statsPorSetor[s].totRetot++;
@@ -2249,8 +2259,9 @@
           });
         }
 
-        if (p.desfecho === 'ÓBITO') statsPorSetor[s].obitos++;
-        if (p.dataTQT && p.dataTQT !== '') statsPorSetor[s].tqt++;
+        if (p.desfecho === 'ÓBITO' && p.dataDesfecho && (!dtInicio||p.dataDesfecho>=dtInicio) && (!dtFim||p.dataDesfecho<=dtFim)) statsPorSetor[s].obitos++;
+        if (p.dataTQT && (!dtInicio||p.dataTQT>=dtInicio) && (!dtFim||p.dataTQT<=dtFim)) statsPorSetor[s].tqt++;
+        if(p.dataDecanul&&p.dataTQT&&(!dtInicio||p.dataDecanul>=dtInicio)&&(!dtFim||p.dataDecanul<=dtFim)){const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);if(dd!==null){statsPorSetor[s].diasTQTDecanul+=dd;statsPorSetor[s].qtdTQTDecanul++;}}
       });
 
       // Tempo IOT–TQT e total de TQT: considerar a data da TQT no período selecionado,
@@ -2277,6 +2288,7 @@
       let globFalhas48h = 0;
       let globTQT = 0;
       let globObitos = 0;
+      let globNaoProgNotificadas=0,globNaoProg=0,globDiasIOTExt=0,globQtdIOTExt=0,globDiasTQTDecanul=0,globQtdTQTDecanul=0;
 
       setoresFiltro.forEach(s => {
         const item = statsPorSetor[s];
@@ -2290,9 +2302,11 @@
         globFalhas48h += item.falhas48h;
         globTQT += item.tqt;
         globObitos += item.obitos;
+        globNaoProgNotificadas+=item.naoProgNotificadas;globNaoProg+=item.autoExt+item.acidExt;
+        globDiasIOTExt+=item.diasIOTExt;globQtdIOTExt+=item.qtdIOTExt;globDiasTQTDecanul+=item.diasTQTDecanul;globQtdTQTDecanul+=item.qtdTQTDecanul;
       });
 
-      const globTxUtilizacao = globInternadosDia > 0 ? Math.min(100, (globDiasAVM / globInternadosDia) * 100).toFixed(1) : '0.0';
+      const globTxUtilizacao = globInternadosDia > 0 ? ((globDiasAVM / globInternadosDia) * 100).toFixed(1) : '0.0';
       const globTotNaoProg = globAutoExt + globAcidExt;
       const globTxNaoProg = globTotExt > 0 ? ((globTotNaoProg / globTotExt) * 100).toFixed(1) : '0.0';
       const globTxSucesso = globTotExt > 0 ? (((globTotExt - globFalhas48h) / globTotExt) * 100).toFixed(1) : '0.0';
@@ -2333,7 +2347,13 @@
         : 'Sem pacientes com ambas as datas válidas';
 
       document.getElementById('dashTaxaObito').textContent = `${globTxObito}%`;
-      document.getElementById('dashObitoSub').textContent = `${globObitos} óbitos em AVM`;
+      document.getElementById('dashObitoSub').textContent = `${globObitos} óbitos pela data de ocorrência`;
+      document.getElementById('dashTempoIOTExt').textContent=globQtdIOTExt?(globDiasIOTExt/globQtdIOTExt).toFixed(1)+' d':'—';
+      document.getElementById('dashTempoIOTExtSub').textContent=globQtdIOTExt?`Média de ${globQtdIOTExt} extubações`:'Sem extubações válidas no período';
+      document.getElementById('dashTempoTQTDecanul').textContent=globQtdTQTDecanul?(globDiasTQTDecanul/globQtdTQTDecanul).toFixed(1)+' d':'—';
+      document.getElementById('dashTempoTQTDecanulSub').textContent=globQtdTQTDecanul?`Média de ${globQtdTQTDecanul} decanulações`:'Sem decanulações válidas no período';
+      document.getElementById('dashPercNotificadas').textContent=globNaoProg?(globNaoProgNotificadas/globNaoProg*100).toFixed(1)+'%':'—';
+      document.getElementById('dashPercNotificadasSub').textContent=`${globNaoProgNotificadas} notificadas / ${globNaoProg} não programadas`;
 
       renderizarTodosOsGraficos(setoresFiltro, statsPorSetor, pacFiltrados);
     }
@@ -2359,7 +2379,7 @@
       const ctxUtil = document.getElementById('graficoUtilizacaoSetor').getContext('2d');
       const dadosUtil = setores.map(s => {
         const item = stats[s];
-        return item.internadosDia > 0 ? parseFloat(Math.min(100, (item.diasAVM / item.internadosDia) * 100).toFixed(1)) : 0;
+        return item.internadosDia > 0 ? parseFloat(((item.diasAVM / item.internadosDia) * 100).toFixed(1)) : 0;
       });
 
       if (chartInst.utilizacao) chartInst.utilizacao.destroy();
@@ -2694,7 +2714,9 @@
         stats[s] = {
           total: 0,
           diasAVM: 0,
+          pacientesAVM: 0,
           internadosDia: 0,
+          naoProgNotificadas:0,diasIOTExt:0,qtdIOTExt:0,diasTQTDecanul:0,qtdTQTDecanul:0,
           totExt: 0,
           totRetot: 0,
           falhas48h: 0,
@@ -2705,24 +2727,8 @@
         };
       });
 
-      // Internados-Dia: somar somente os censos reais registrados no período, por setor.
-      Object.keys(censoInternados || {}).forEach(dia => {
-        if ((dtInicio && dia < dtInicio) || (dtFim && dia > dtFim)) return;
-        SETORES_ATIVOS.forEach(setor => {
-          const valor = censoInternados[dia]?.[setor];
-          if (valor !== undefined && valor !== null && valor !== '') {
-            stats[setor].internadosDia += Math.max(0, Number(valor) || 0);
-          }
-        });
-      });
-
-      const pacientesPeriodo = pacientes.filter(p => {
-        if (dtInicio && p.dataIOT && p.dataIOT < dtInicio) {
-          if (p.dataDesfecho && p.dataDesfecho < dtInicio) return false;
-        }
-        if (dtFim && p.dataIOT && p.dataIOT > dtFim) return false;
-        return true;
-      });
+      SETORES_ATIVOS.forEach(s=>{stats[s].internadosDia=somarInternadosDiaSetor(s,dtInicio,dtFim);});
+      const pacientesPeriodo=pacientes.filter(p=>contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
 
       pacientesPeriodo.forEach(p => {
         const s = stats[p.setor] ? p.setor : SETORES_ATIVOS[0];
@@ -2730,15 +2736,17 @@
           stats[s] = { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
         }
         stats[s].total++;
-        stats[s].diasAVM += atualizarDiasAVMDoPaciente(p);
+        stats[s].pacientesAVM++;
+        stats[s].diasAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
 
         if (p.ciclos && p.ciclos.length > 0) {
           p.ciclos.forEach(c => {
             if (dtInicio && (!c.dataExt || c.dataExt < dtInicio)) return;
             if (dtFim && (!c.dataExt || c.dataExt > dtFim)) return;
             stats[s].totExt++;
-            if (c.tipoExt === 'AUTOEXTUBACAO') stats[s].autoextubacao++;
-            else if (c.tipoExt === 'ACIDENTAL') stats[s].acidental++;
+            if (c.tipoExt === 'AUTOEXTUBACAO') {stats[s].autoextubacao++;if(String(c.numeroNotificacao||'').trim())stats[s].naoProgNotificadas++;}
+            else if (c.tipoExt === 'ACIDENTAL') {stats[s].acidental++;if(String(c.numeroNotificacao||'').trim())stats[s].naoProgNotificadas++;}
+            const de=diasEntreDatasIOTeTQT(p.dataIOT,c.dataExt);if(de!==null){stats[s].diasIOTExt+=de;stats[s].qtdIOTExt++;}
 
             if (c.teveRetot) {
               stats[s].totRetot++;
@@ -2747,7 +2755,7 @@
           });
         }
 
-        if (p.desfecho === 'ÓBITO') stats[s].obitos++;
+        if (p.desfecho === 'ÓBITO' && p.dataDesfecho && (!dtInicio||p.dataDesfecho>=dtInicio) && (!dtFim||p.dataDesfecho<=dtFim)) stats[s].obitos++;
       });
 
       // Indicador IOT–TQT: incluir casos pela data de realização da TQT no período.
@@ -2758,6 +2766,7 @@
         const s = stats[p.setor] ? p.setor : SETORES_ATIVOS[0];
         if (!stats[s]) return;
         stats[s].tqt++;
+        if(p.dataDecanul&&(!dtInicio||p.dataDecanul>=dtInicio)&&(!dtFim||p.dataDecanul<=dtFim)){const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);if(dd!==null){stats[s].diasTQTDecanul+=dd;stats[s].qtdTQTDecanul++;}}
         const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
         if (diasIOTTQT !== null) {
           stats[s].diasIOTTQT = (stats[s].diasIOTTQT || 0) + diasIOTTQT;
@@ -2777,11 +2786,15 @@
         const txNaoProg = item.totExt > 0 ? ((totNaoProg / item.totExt) * 100).toFixed(1) + '%' : '0.0%';
         const txSucesso = item.totExt > 0 ? (((item.totExt - item.falhas48h) / item.totExt) * 100).toFixed(1) + '%' : '-';
         const mediaIOTTQT = item.qtdIOTTQT > 0 ? (item.diasIOTTQT / item.qtdIOTTQT).toFixed(1) + ' d' : '—';
+        const mediaIOTExt=item.qtdIOTExt>0?(item.diasIOTExt/item.qtdIOTExt).toFixed(1)+' d':'—';
+        const mediaTQTDecanul=item.qtdTQTDecanul>0?(item.diasTQTDecanul/item.qtdTQTDecanul).toFixed(1)+' d':'—';
+        const naoProg=item.autoextubacao+item.acidental;
+        const percNotificadas=naoProg>0?(item.naoProgNotificadas/naoProg*100).toFixed(1)+'%':'—';
 
         tbody.innerHTML += `
           <tr>
             <td><strong>${set}</strong></td>
-            <td>${item.total}</td>
+            <td>${item.pacientesAVM}</td>
             <td>${item.diasAVM} d</td>
             <td>${internadosDia} d</td>
             <td><strong style="color: var(--primary);">${txUtilizacao}</strong></td>
@@ -2794,6 +2807,9 @@
             <td>${txNaoProg}</td>
             <td>${item.tqt}</td>
             <td>${mediaIOTTQT}</td>
+            <td>${mediaIOTExt}</td>
+            <td>${mediaTQTDecanul}</td>
+            <td>${percNotificadas}</td>
             <td>${item.obitos}</td>
           </tr>
         `;
