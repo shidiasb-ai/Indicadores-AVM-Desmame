@@ -144,20 +144,24 @@ Deno.serve(async (req) => {
       return stats[sector];
     };
 
+    const setoresConhecidos = new Set<string>(
+      patients.map(row => normalizeSector(row?.dados?.setor)).filter(Boolean)
+    );
     for (const row of censo) {
       const date = isoDate(row.data_ronda);
       if (!inside(date, startDate, endDate) || !row.dados || typeof row.dados !== "object") continue;
       for (const [rawSector, value] of Object.entries(row.dados)) {
         const sector = normalizeSector(rawSector), count = Number(value);
         if (!sector || !Number.isFinite(count) || count < 0) continue;
+        setoresConhecidos.add(sector);
         ensure(sector);
         censoByDay[date][sector] = count;
       }
     }
     for (const day of Object.keys(daily)) {
       const sectorsWithCensus = Object.keys(censoByDay[day]);
-      daily[day].internados = sectorsWithCensus.length
-        ? sectorsWithCensus.reduce((sum, sector) => sum + censoByDay[day][sector], 0)
+      daily[day].internados = setoresConhecidos.size > 0 && [...setoresConhecidos].every(sector => Object.prototype.hasOwnProperty.call(censoByDay[day], sector))
+        ? [...setoresConhecidos].reduce((sum, sector) => sum + censoByDay[day][sector], 0)
         : null;
       for (const sector of sectorsWithCensus) {
         const s = ensure(sector);
