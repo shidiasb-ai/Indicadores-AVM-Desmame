@@ -2951,7 +2951,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     }
 
     function resetarFiltrosDados() {
-      const hoje = new Date().toISOString().slice(0, 10);
+      const hoje = obterDataLocalISO();
       document.getElementById('filtroDadosInicio').value = `${hoje.slice(0, 7)}-01`;
       document.getElementById('filtroDadosFim').value = hoje;
       calcularAbaDados();
@@ -4044,7 +4044,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     }
 
     window.addEventListener('DOMContentLoaded', async () => {
-      const hoje = new Date().toISOString().slice(0,10);
+      const hoje = obterDataLocalISO();
       const inicioMes = `${hoje.slice(0,7)}-01`;
       document.getElementById('dataRonda').value = hoje;
       document.getElementById('filtroDashInicio').value = inicioMes;
