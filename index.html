@@ -3315,28 +3315,46 @@
         let atualizados = 0;
 
         pacientesPreviaImportados.forEach(novoP => {
+          // Um registro corresponde a uma internação/acompanhamento em um setor.
+          // Não basta nome ou prontuário isolados: o mesmo paciente pode ter homônimo,
+          // nova internação ou passagem por outro setor.
+          const nomeNovo=String(novoP.nome||'').trim().toUpperCase();
+          const regNovo=String(novoP.registro||'').trim();
+          const setorNovo=String(novoP.setor||'').trim().toUpperCase();
+          const admNovo=String(novoP.dataAdm||'').slice(0,10);
           const idxExistente = pacientes.findIndex(p => {
-            if (novoP.registro && p.registro && novoP.registro === p.registro) return true;
-            return p.nome.trim().toUpperCase() === novoP.nome.trim().toUpperCase();
+            const nomeAtual=String(p.nome||'').trim().toUpperCase();
+            const regAtual=String(p.registro||'').trim();
+            const setorAtual=String(p.setor||'').trim().toUpperCase();
+            const admAtual=String(p.dataAdm||'').slice(0,10);
+            if(setorAtual!==setorNovo)return false;
+            if(admAtual&&admNovo&&admAtual!==admNovo)return false;
+            if(regNovo&&regAtual)return regNovo===regAtual;
+            return !!nomeNovo&&nomeAtual===nomeNovo;
           });
 
           if (idxExistente >= 0) {
             const atual = pacientes[idxExistente];
             atual.historico = { ...(atual.historico || {}), ...(novoP.historico || {}) };
-            atual.tempoAVM = Math.max(atual.tempoAVM || 0, novoP.tempoAVM || 0);
-            atual.tempoDesc = Math.max(atual.tempoDesc || 0, novoP.tempoDesc || 0);
-            atual.tempoRE = Math.max(atual.tempoRE || 0, novoP.tempoRE || 0);
+            atual.tempoDesc = Math.max(Number(atual.tempoDesc)||0, Number(novoP.tempoDesc)||0);
+            atual.tempoRE = Math.max(Number(atual.tempoRE)||0, Number(novoP.tempoRE)||0);
+            atual.dataAdm = novoP.dataAdm || atual.dataAdm;
+            // Preserva a primeira IOT do episódio; reintubações permanecem no histórico de ciclos.
+            const iots=[atual.dataIOT,novoP.dataIOT].filter(Boolean).map(x=>String(x).slice(0,10)).sort();
+            if(iots.length)atual.dataIOT=iots[0];
+            atual.setor=novoP.setor||atual.setor;
+            if(novoP.statusHoje)atual.statusHoje=novoP.statusHoje;
             if (novoP.desfecho && novoP.desfecho !== 'ATIVO') {
               atual.desfecho = novoP.desfecho;
               atual.dataDesfecho = novoP.dataDesfecho || atual.dataDesfecho;
-              atual.statusHoje = novoP.statusHoje;
+              atual.statusHoje = novoP.statusHoje || atual.statusHoje;
             }
+            if (!Array.isArray(atual.ciclos)) atual.ciclos=[];
             if (novoP.ciclos && novoP.ciclos.length > 0) {
               novoP.ciclos.forEach(c => {
-                if (!atual.ciclos.some(x => x.dataExt === c.dataExt)) {
-                  atual.ciclos.push(c);
-                }
+                if (!atual.ciclos.some(x => x.dataExt === c.dataExt)) atual.ciclos.push(c);
               });
+              atual.ciclos.sort((a,b)=>String(a.dataExt||'').localeCompare(String(b.dataExt||'')));
               atual.ciclos.forEach((c, i) => c.ciclo = i + 1);
             }
             if (novoP.dataTQT) atual.dataTQT = novoP.dataTQT;
