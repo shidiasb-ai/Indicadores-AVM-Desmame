@@ -116,7 +116,13 @@ Deno.serve(async (req) => {
       if (!data || data.length < 1000) break;
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const todayParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Recife", year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(new Date()).reduce((acc: Record<string, string>, part) => {
+      if (part.type !== "literal") acc[part.type] = part.value;
+      return acc;
+    }, {});
+    const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
     const startDate = start || "2026-11-01";
     const endDate = end || (today < startDate ? startDate : today);
     const stats: Record<string, any> = {};
