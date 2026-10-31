@@ -1622,6 +1622,10 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       document.getElementById('dashTQTSub').textContent = `${t.tqt || 0} traqueostomias`;
       document.getElementById('dashTempoIOTTQT').textContent = t.mediaIOTTQT == null ? '—' : `${Number(t.mediaIOTTQT).toFixed(1)} d`;
       document.getElementById('dashTempoIOTTQTSub').textContent = t.qtdIOTTQT > 0 ? `Média de ${t.qtdIOTTQT} pacientes com datas válidas` : 'Sem pacientes com ambas as datas válidas';
+      document.getElementById('dashTempoIOTExt').textContent = t.mediaIOTExt == null ? '—' : `${Number(t.mediaIOTExt).toFixed(1)} d`;
+      document.getElementById('dashTempoIOTExtSub').textContent = t.qtdIOTExt > 0 ? `Média de ${t.qtdIOTExt} extubações válidas` : 'Sem extubações válidas no período';
+      document.getElementById('dashTempoTQTDecanul').textContent = t.mediaTQTDecanul == null ? '—' : `${Number(t.mediaTQTDecanul).toFixed(1)} d`;
+      document.getElementById('dashTempoTQTDecanulSub').textContent = t.qtdTQTDecanul > 0 ? `Média de ${t.qtdTQTDecanul} decanulações válidas` : 'Sem decanulações válidas no período';
       document.getElementById('dashTaxaObito').textContent = formatarPercentualAgregado(t.txObito);
       document.getElementById('dashObitoSub').textContent = `${t.obitos || 0} óbitos em AVM`;
       renderizarGraficosConvidado(data);
@@ -1654,13 +1658,17 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       tbody.innerHTML = '';
       (data?.setores || []).forEach(item => {
         const media = item.mediaIOTTQT == null ? '—' : `${Number(item.mediaIOTTQT).toFixed(1)} d`;
+        const mediaIOTExt = item.mediaIOTExt == null ? '—' : `${Number(item.mediaIOTExt).toFixed(1)} d`;
+        const mediaTQTDecanul = item.mediaTQTDecanul == null ? '—' : `${Number(item.mediaTQTDecanul).toFixed(1)} d`;
         tbody.innerHTML += `<tr>
           <td><strong>${escaparHtml(item.setor)}</strong></td>
           <td>${item.pacientesAVM || 0}</td><td>${item.diasAVM || 0} d</td><td><strong>${item.mediaAVM==null?'—':Number(item.mediaAVM).toFixed(1)+' d'}</strong></td>
           <td><strong>${formatarPercentualAgregado(item.txUtilizacao)}</strong></td>
           <td>${item.totExt || 0}</td><td>${item.totRetot || 0}</td><td>${item.falhas48h || 0}</td>
           <td>${formatarPercentualAgregado(item.txSucesso)}</td><td>${item.autoextubacao || 0}</td><td>${item.acidental || 0}</td>
-          <td>${formatarPercentualAgregado(item.txNaoProg)}</td><td>${item.tqt || 0}</td><td>${media}</td><td>${item.obitos || 0}</td>
+          <td>${formatarPercentualAgregado(item.txNaoProg)}</td><td>${item.tqt || 0}</td><td>${media}</td>
+          <td>${mediaIOTExt}</td><td>${mediaTQTDecanul}</td>
+          <td>—</td><td>${item.obitos || 0}</td>
         </tr>`;
       });
     }
