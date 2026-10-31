@@ -1516,13 +1516,13 @@
       });
       return [...grupos.values()].map(g=>{
         const rows=g.rows;
-        const validDates=xs=>xs.map(x=>String(x||'').slice(0,10)).filter(d=>/^\\d{4}-\\d{2}-\\d{2}$/.test(d)).sort();
+        const validDates=xs=>xs.map(x=>String(x||'').slice(0,10)).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
         const adm=validDates(rows.map(p=>p.dataAdm))[0]||'';
         const iot=validDates(rows.map(p=>p.dataIOT))[0]||'';
         const historico={};
         rows.forEach(p=>Object.entries(p.historico||{}).forEach(([d,status])=>{
           const rowAdm=String(p.dataAdm||'').slice(0,10);
-          if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(d)||!rowAdm||d<rowAdm)return;
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!rowAdm||d<rowAdm)return;
           const v=String(status||'').toUpperCase(),old=historico[d];
           const off=x=>x==='RE'||x==='DESCONEXÃO'||x==='DESCONEXAO';
           if(!old||off(v)||!off(old))historico[d]=v;
@@ -2339,7 +2339,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     function tqtPertenceAoSetor(p) {
       const tqt=String(p?.dataTQT||'').slice(0,10);
       const adm=String(p?.dataAdm||'').slice(0,10);
-      return /^\\d{4}-\\d{2}-\\d{2}$/.test(tqt)&&/^\\d{4}-\\d{2}-\\d{2}$/.test(adm)&&tqt>=adm;
+      return /^\d{4}-\d{2}-\d{2}$/.test(tqt)&&/^\d{4}-\d{2}-\d{2}$/.test(adm)&&tqt>=adm;
     }
     function dataDoEventoPertenceAoSetor(p,dataEvento) {
       const evento=String(dataEvento||'').slice(0,10);
@@ -2355,8 +2355,8 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         const iot=String(p.dataIOT||'').slice(0,10);
         const adm=String(p.dataAdm||'').slice(0,10);
         if(setoresPermitidos&&!setoresPermitidos.includes(setor))return;
-        if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(adm)||!tqtPertenceAoSetor(p)||!dataDentroPeriodo(tqt,inicio,fim))return;
-        if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(iot)||iot>tqt)return;
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(adm)||!tqtPertenceAoSetor(p)||!dataDentroPeriodo(tqt,inicio,fim))return;
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(iot)||iot>tqt)return;
         const inicioEpisodio=iot>adm?iot:adm;
         if(inicioEpisodio>tqt)return;
         const chave=setor+'|'+chavePacienteIndicador(p)+'|'+tqt;
@@ -2394,7 +2394,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       return iotOk||admOk;
     }
     function avaliarExtubacoesPeriodo(p,inicio,fim,hoje=obterDataLocalISO()) {
-      const ciclos=(p?.ciclos||[]).filter(c=>/^\\d{4}-\\d{2}-\\d{2}$/.test(String(c.dataExt||'').slice(0,10)))
+      const ciclos=(p?.ciclos||[]).filter(c=>/^\d{4}-\d{2}-\d{2}$/.test(String(c.dataExt||'').slice(0,10)))
         .slice().sort((a,b)=>String(a.dataExt).slice(0,10).localeCompare(String(b.dataExt).slice(0,10)));
       const resultado={total:0,retot:0,falhas48h:0,avaliaveis:0,sucessos:0,pendentes:0,auto:0,acidental:0,programada:0,notificadas:0,diasIOTExt:0,qtdIOTExt:0};
       ciclos.forEach((c,i)=>{
@@ -2406,7 +2406,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
           if(c.tipoExt==='AUTOEXTUBACAO'){resultado.auto++;if(String(c.numeroNotificacao||'').trim())resultado.notificadas++;}
           else if(c.tipoExt==='ACIDENTAL'){resultado.acidental++;if(String(c.numeroNotificacao||'').trim())resultado.notificadas++;}
           else if(c.tipoExt==='PROGRAMADA')resultado.programada++;
-          if(c.teveRetot&&dataRetot&&/^\\d{4}-\\d{2}-\\d{2}$/.test(dataRetot)){
+          if(c.teveRetot&&dataRetot&&/^\d{4}-\d{2}-\d{2}$/.test(dataRetot)){
             const gap=diasEntreDatasIOTeTQT(dataExt,dataRetot);
             if(gap!==null&&gap>=0){
               resultado.avaliaveis++;
