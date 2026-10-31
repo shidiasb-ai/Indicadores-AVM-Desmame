@@ -2353,14 +2353,15 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         const setor=normalizarSetorIndicador(p.setor);
         const tqt=String(p.dataTQT||'').slice(0,10);
         const iot=String(p.dataIOT||'').slice(0,10);
+        const adm=String(p.dataAdm||'').slice(0,10);
         if(setoresPermitidos&&!setoresPermitidos.includes(setor))return;
-        if(!tqtPertenceAoSetor(p)||!dataDentroPeriodo(tqt,inicio,fim))return;
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(iot)||iot>tqt)return;
+        if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(adm)||!tqtPertenceAoSetor(p)||!dataDentroPeriodo(tqt,inicio,fim))return;
+        if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(iot)||iot>tqt)return;
+        const inicioEpisodio=iot>adm?iot:adm;
+        if(inicioEpisodio>tqt)return;
         const chave=setor+'|'+chavePacienteIndicador(p)+'|'+tqt;
         const atual=eventos.get(chave);
-        // Se o mesmo procedimento foi replicado em registros de ciclos,
-        // usa a IOT válida mais próxima e anterior à TQT.
-        if(!atual||iot>String(atual.dataIOT).slice(0,10))eventos.set(chave,p);
+        if(!atual||inicioEpisodio>String(atual.dataIOT).slice(0,10))eventos.set(chave,{...p,dataIOT:inicioEpisodio});
       });
       return [...eventos.values()];
     }
