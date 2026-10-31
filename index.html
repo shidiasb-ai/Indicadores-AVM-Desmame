@@ -412,10 +412,10 @@
           📥 Exportar Dados ▾
         </button>
         <div class="dropdown-content" id="dropdownMenuExportar">
-          <button class="dropdown-item" onclick="exportarCSV()"><span style="color:#16a34a;">📄</span> Planilha CSV</button>
-          <button class="dropdown-item" onclick="exportarExcel()"><span style="color:#16a34a;">📊</span> Microsoft Excel (.xls)</button>
-          <button class="dropdown-item" onclick="exportarWord()"><span style="color:#0284c7;">📝</span> Relatório Word (.doc)</button>
-          <button class="dropdown-item" onclick="exportarPDF()"><span style="color:#dc2626;">📑</span> Documento PDF (.pdf)</button>
+          <button class="dropdown-item" onclick="abrirExportacao('csv')"><span style="color:#16a34a;">📄</span> Planilha CSV</button>
+          <button class="dropdown-item" onclick="abrirExportacao('excel')"><span style="color:#16a34a;">📊</span> Microsoft Excel (.xlsx)</button>
+          <button class="dropdown-item" onclick="abrirExportacao('word')"><span style="color:#0284c7;">📝</span> Relatório Word (.doc)</button>
+          <button class="dropdown-item" onclick="abrirExportacao('pdf')"><span style="color:#dc2626;">📑</span> Documento PDF (.pdf)</button>
         </div>
       </div>
     </div>
@@ -1169,6 +1169,20 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="modalExportacao">
+    <div class="modal-box" style="max-width:440px;">
+      <h3 style="font-size:1rem;font-weight:700;">Exportar registros por período</h3>
+      <p style="font-size:.8rem;color:var(--text-muted);">Selecione o intervalo. Serão incluídos pacientes com internação ou eventos no período.</p>
+      <div class="form-grid">
+        <div class="form-group"><label>Data inicial</label><input type="date" id="exportDataInicio" class="form-ctrl"></div>
+        <div class="form-group"><label>Data final</label><input type="date" id="exportDataFim" class="form-ctrl"></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn" onclick="fecharExportacao()">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmarExportacao()">Exportar</button>
+      </div>
+    </div>
+  </div>
   <footer>
     <span id="footerHospitalNome">Hospital Metropolitano Sul Dom Helder Câmara</span> • Coordenação de Saúde Funcional / Fisioterapia
   </footer>
@@ -3547,77 +3561,59 @@
       return d;
     }
 
-    function exportarCSV() {
-      if (pacientes.length === 0) return alert('Sem dados para exportar.');
-      const header = ['NOME','SETOR','REGISTRO','IDADE','DATA_IOT','QTD_EXTUBACOES','QTD_RETOT','DATA_TQT','DATA_DECANUL','DIAS_AVM','DESFECHO','DATA_DESFECHO'];
-      const rows = pacientes.map(p => {
-        const qtdExt = p.ciclos ? p.ciclos.length : 0;
-        const qtdRet = p.ciclos ? p.ciclos.filter(c => c.teveRetot).length : 0;
-        return [
-          `"${p.nome || ''}"`, `"${p.setor || ''}"`, `"${p.registro || ''}"`, `"${p.idade || ''}"`,
-          `"${p.dataIOT || ''}"`, `"${qtdExt}"`, `"${qtdRet}"`,
-          `"${p.dataTQT || ''}"`, `"${p.dataDecanul || ''}"`, `"${p.tempoAVM || 0}"`, `"${p.desfecho || ''}"`,
-          `"${p.dataDesfecho || ''}"`
-        ].join(';');
+    let formatoExportacaoSelecionado = 'csv';
+    let periodoExportacao = { inicio: '', fim: '' };
+    function abrirExportacao(formato) {
+      formatoExportacaoSelecionado = formato;
+      const hoje = obterDataLocalISO();
+      document.getElementById('exportDataInicio').value = document.getElementById('filtroDadosInicio')?.value || (hoje.slice(0,7)+'-01');
+      document.getElementById('exportDataFim').value = document.getElementById('filtroDadosFim')?.value || hoje;
+      document.getElementById('modalExportacao').classList.add('active');
+      document.getElementById('dropdownMenuExportar').classList.remove('show');
+    }
+    function fecharExportacao() { document.getElementById('modalExportacao').classList.remove('active'); }
+    function filtrarPacientesExportacao() {
+      const a=periodoExportacao.inicio,b=periodoExportacao.fim;
+      return pacientes.filter(p=>{
+        const eventos=[p.dataAdm,p.dataIOT,p.dataDesfecho,p.dataTQT,p.dataDecanul,...(p.ciclos||[]).flatMap(c=>[c.dataExt,c.dataRetot])].filter(Boolean).map(d=>String(d).slice(0,10));
+        return eventos.some(d=>d>=a&&d<=b) || (!!p.dataAdm&&p.dataAdm<=b&&(!p.dataDesfecho||p.dataDesfecho>=a));
       });
-
-      const csv = '\uFEFF' + [header.join(';'), ...rows].join('\r\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      baixarBlob(blob, `indicadores_avm_hdh_${new Date().toISOString().slice(0, 10)}.csv`);
+    }
+    function confirmarExportacao() {
+      const inicio=document.getElementById('exportDataInicio').value, fim=document.getElementById('exportDataFim').value;
+      if(!inicio||!fim||fim<inicio)return alert('Informe um período válido.');
+      periodoExportacao={inicio,fim}; fecharExportacao();
+      if(formatoExportacaoSelecionado==='csv')exportarCSV();
+      else if(formatoExportacaoSelecionado==='excel')exportarExcel();
+      else if(formatoExportacaoSelecionado==='word')exportarWord();
+      else exportarPDF();
+    }
+    function resumoCiclosExportacao(p) {
+      return (p.ciclos||[]).map(c=>(c.ciclo||'')+'ª Ext: '+formatarData(c.dataExt)+(c.teveRetot?' / RETOT: '+formatarData(c.dataRetot):'')+(c.numeroNotificacao?' / Notificação: '+c.numeroNotificacao:'')).join(' | ') || '-';
+    }
+    function exportarCSV() {
+      const lista=filtrarPacientesExportacao();
+      if(!lista.length)return alert('Não há registros no período selecionado.');
+      const header=['Paciente / Leito','Setor','Prontuário','Data IOT','Dias AVM','Histórico de Ciclos Ext/RETOT','TQT / Decanul.','Desfecho'];
+      const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+      const rows=lista.map(p=>[p.nome,p.setor,p.registro,p.dataIOT,calcularDiasAVMAtual(p),resumoCiclosExportacao(p),'TQT: '+formatarData(p.dataTQT)+' / Decanul.: '+formatarData(p.dataDecanul),p.desfecho].map(esc).join(';'));
+      const blob=new Blob(['\uFEFF'+[header.join(';'),...rows].join('\r\n')],{type:'text/csv;charset=utf-8;'});
+      baixarBlob(blob,'indicadores_avm_'+periodoExportacao.inicio+'_'+periodoExportacao.fim+'.csv');
     }
 
     function exportarExcel() {
-      if (pacientes.length === 0) return alert('Sem dados para exportar.');
-
-      let html = `
-        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-        <head><meta charset="utf-8"/></head>
-        <body>
-          <table border="1">
-            <thead>
-              <tr style="background:#0284c7;color:#ffffff;font-weight:bold;">
-                <th>Nome do Paciente / Leito</th>
-                <th>Setor / Unidade</th>
-                <th>Registro / Prontuário</th>
-                <th>Idade</th>
-                <th>Data da IOT</th>
-                <th>Dias em AVM</th>
-                <th>Total de Extubações</th>
-                <th>Total de RETOTs</th>
-                <th>Data TQT</th>
-                <th>Data Decanulação</th>
-                <th>Desfecho Clínico</th>
-                <th>Data do Desfecho</th>
-              </tr>
-            </thead>
-            <tbody>
-      `;
-
-      pacientes.forEach(p => {
-        const qtdExt = p.ciclos ? p.ciclos.length : 0;
-        const qtdRet = p.ciclos ? p.ciclos.filter(c => c.teveRetot).length : 0;
-        html += `
-          <tr>
-            <td>${p.nome || ''}</td>
-            <td>${p.setor || ''}</td>
-            <td>${p.registro || ''}</td>
-            <td>${p.idade || ''}</td>
-            <td>${formatarData(p.dataIOT)}</td>
-            <td>${p.tempoAVM || 0}</td>
-            <td>${qtdExt}</td>
-            <td>${qtdRet}</td>
-            <td>${formatarData(p.dataTQT)}</td>
-            <td>${formatarData(p.dataDecanul)}</td>
-            <td>${p.desfecho || ''}</td>
-            <td>${formatarData(p.dataDesfecho)}</td>
-          </tr>
-        `;
-      });
-
-      html += `</tbody></table></body></html>`;
-
-      const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
-      baixarBlob(blob, `relatorio_avm_hdh_${new Date().toISOString().slice(0, 10)}.xls`);
+      const lista=filtrarPacientesExportacao();
+      if(!lista.length)return alert('Não há registros no período selecionado.');
+      const dados=lista.map(p=>({
+        'Paciente / Leito':p.nome||'','Setor':p.setor||'','Prontuário':p.registro||'',
+        'Data IOT':formatarData(p.dataIOT),'Dias AVM':calcularDiasAVMAtual(p),
+        'Histórico de Ciclos Ext/RETOT':resumoCiclosExportacao(p),
+        'TQT / Decanul.':'TQT: '+formatarData(p.dataTQT)+' / Decanul.: '+formatarData(p.dataDecanul),
+        'Desfecho':p.desfecho||''
+      }));
+      const wb=XLSX.utils.book_new();const ws=XLSX.utils.json_to_sheet(dados);
+      XLSX.utils.book_append_sheet(wb,ws,'Registros AVM');
+      XLSX.writeFile(wb,'indicadores_avm_'+periodoExportacao.inicio+'_'+periodoExportacao.fim+'.xlsx');
     }
 
     function exportarWord() {
