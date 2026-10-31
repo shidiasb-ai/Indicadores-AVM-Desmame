@@ -542,7 +542,7 @@
         <div class="kpi-card" style="border-left: 4px solid var(--success);">
           <div class="kpi-title">Taxa Sucesso Extubação</div>
           <div class="kpi-num" id="dashTaxaSucesso" style="color: var(--success);">0.0%</div>
-          <div class="kpi-desc" id="dashSucessoSub">Sem reintubação &lt;48h</div>
+          <div class="kpi-desc" id="dashSucessoSub">Sem reintubação após 48h completas</div>
         </div>
         <div class="kpi-card" style="border-left: 4px solid var(--danger);">
           <div class="kpi-title">Taxa Falha Extubação</div>
@@ -613,7 +613,7 @@
         <div class="chart-box">
           <div class="chart-box-title">
             <span>4. Taxas de Sucesso e Falha de Extubação</span>
-            <span class="tag">Sucesso vs Falha &lt;48h (%)</span>
+            <span class="tag">Sucesso vs Falha após acompanhamento de 48h (%)</span>
           </div>
           <div class="chart-container">
             <canvas id="graficoSucessoFalha"></canvas>
@@ -1586,7 +1586,7 @@
       document.getElementById('dashContagemExtRetot').textContent = `${t.totExt || 0} | ${t.totRetot || 0}`;
       document.getElementById('dashExtRetotSub').textContent = `${t.totExt || 0} extubações / ${t.totRetot || 0} RETOTs`;
       document.getElementById('dashTaxaSucesso').textContent = formatarPercentualAgregado(t.txSucesso);
-      document.getElementById('dashSucessoSub').textContent = `${(t.totExt || 0) - (t.falhas48h || 0)} sem reintubação <48h`;
+      document.getElementById('dashSucessoSub').textContent = `Taxa sobre extubações com acompanhamento completo de 48h; extubações recentes continuam no total`;
       document.getElementById('dashTaxaFalha').textContent = formatarPercentualAgregado(t.txFalha);
       document.getElementById('dashFalhaSub').textContent = `${t.falhas48h || 0} falhas <48h`;
       document.getElementById('dashPacientesDia').textContent = `${t.diasAVM || 0} d`;
@@ -1605,7 +1605,7 @@
       const rows = data?.setores || [];
       if (!window.Chart) return;
       const setores = rows.map(s => s.setor), stats = {};
-      rows.forEach(s => stats[s.setor] = {diasAVM:+s.diasAVM||0,internadosDia:+s.internadosDia||0,txUtilizacao:s.txUtilizacao,totExt:+s.totExt||0,extProg:+s.programada||0,autoExt:+s.autoextubacao||0,acidExt:+s.acidental||0,falhas48h:+s.falhas48h||0,tqt:+s.tqt||0,obitos:+s.obitos||0,totalPacientes:+s.total||0});
+      rows.forEach(s => stats[s.setor] = {diasAVM:+s.diasAVM||0,internadosDia:+s.internadosDia||0,txUtilizacao:s.txUtilizacao,totExt:+s.totExt||0,extProg:+s.programada||0,autoExt:+s.autoextubacao||0,acidExt:+s.acidental||0,falhas48h:+s.falhas48h||0,txSucesso:s.txSucesso==null?null:+s.txSucesso,txFalha:s.txFalha==null?null:+s.txFalha,tqt:+s.tqt||0,obitos:+s.obitos||0,totalPacientes:+s.total||0});
       const dark=document.body.getAttribute('data-theme')==='dark', textColor=dark?'#f8fafc':'#0f172a', gridColor=dark?'#334155':'#e2e8f0';
       const labels=setores, dl=suffix=>({anchor:'end',align:'top',color:textColor,font:{weight:'bold',size:11},formatter:v=>v==null||v===0?'':v+suffix});
       const axes=max=>({y:{beginAtZero:true,...(max===undefined?{}:{max}),grid:{color:gridColor},ticks:{color:textColor}},x:{grid:{display:false},ticks:{color:textColor,font:{weight:'600'}}}});
@@ -1613,7 +1613,7 @@
       draw('graficoUtilizacaoSetor',{type:'bar',data:{labels,datasets:[{label:'Taxa de Utilização (%)',data:setores.map(s=>stats[s].txUtilizacao==null?null:+Number(stats[s].txUtilizacao).toFixed(1)),backgroundColor:'#0284c7',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(100),plugins:{legend:{display:false},datalabels:dl('%')}}});
       draw('graficoTaxaNaoProg',{type:'bar',data:{labels,datasets:[{label:'Taxa de Extubação Não Programada (%)',data:setores.map(s=>stats[s].totExt>0?+((stats[s].autoExt+stats[s].acidExt)/stats[s].totExt*100).toFixed(1):0),backgroundColor:'#d97706',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(100),plugins:{legend:{display:false},datalabels:dl('%')}}});
       draw('graficoComparativoTiposExt',{type:'bar',data:{labels,datasets:[{label:'Programadas',data:setores.map(s=>stats[s].extProg),backgroundColor:'#16a34a',borderRadius:4},{label:'Autoextubação',data:setores.map(s=>stats[s].autoExt),backgroundColor:'#f59e0b',borderRadius:4},{label:'Acidental',data:setores.map(s=>stats[s].acidExt),backgroundColor:'#dc2626',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(),plugins:{legend:{position:'bottom',labels:{color:textColor,boxWidth:12}},datalabels:dl('')}}});
-      draw('graficoSucessoFalha',{type:'bar',data:{labels,datasets:[{label:'Taxa Sucesso (%)',data:setores.map(s=>stats[s].totExt>0?+((stats[s].totExt-stats[s].falhas48h)/stats[s].totExt*100).toFixed(1):0),backgroundColor:'#16a34a',borderRadius:4},{label:'Taxa Falha <48h (%)',data:setores.map(s=>stats[s].totExt>0?+(stats[s].falhas48h/stats[s].totExt*100).toFixed(1):0),backgroundColor:'#ef4444',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(100),plugins:{legend:{position:'bottom',labels:{color:textColor,boxWidth:12}},datalabels:dl('%')}}});
+      draw('graficoSucessoFalha',{type:'bar',data:{labels,datasets:[{label:'Taxa Sucesso (%)',data:setores.map(s=>stats[s].txSucesso),backgroundColor:'#16a34a',borderRadius:4},{label:'Taxa Falha <48h (%)',data:setores.map(s=>stats[s].txFalha),backgroundColor:'#ef4444',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(100),plugins:{legend:{position:'bottom',labels:{color:textColor,boxWidth:12}},datalabels:dl('%')}}});
       draw('graficoPacientesDia',{type:'bar',data:{labels,datasets:[{label:'AVM-Dias',data:setores.map(s=>stats[s].diasAVM),backgroundColor:'#7c3aed',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(),plugins:{legend:{display:false},datalabels:dl(' d')}}});
       draw('graficoTQTObito',{type:'bar',data:{labels,datasets:[{label:'Taxa Traqueostomia (%)',data:setores.map(s=>stats[s].totalPacientes>0?+(stats[s].tqt/stats[s].totalPacientes*100).toFixed(1):0),backgroundColor:'#8b5cf6',borderRadius:4},{label:'Mortalidade (%)',data:setores.map(s=>stats[s].totalPacientes>0?+(stats[s].obitos/stats[s].totalPacientes*100).toFixed(1):0),backgroundColor:'#f43f5e',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},scales:axes(100),plugins:{legend:{position:'bottom',labels:{color:textColor,boxWidth:12}},datalabels:dl('%')}}});
       const ev=data?.evolucaoDiaria||[];
@@ -2306,6 +2306,69 @@
       return Math.floor((Date.UTC(fim.getFullYear(),fim.getMonth(),fim.getDate())-Date.UTC(inicio.getFullYear(),inicio.getMonth(),inicio.getDate()))/86400000);
     }
 
+    function dataDentroPeriodo(data,inicio,fim) {
+      const d=String(data||'').slice(0,10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(d)&&(!inicio||d>=inicio)&&(!fim||d<=fim);
+    }
+    function obterInicioEpisodioExtubacao(p,ciclosOrdenados,indice) {
+      // Cada extubação é relacionada à IOT que iniciou aquele episódio.
+      // Após RETOT, o episódio seguinte começa na data da reintubação.
+      for(let i=indice-1;i>=0;i--){
+        const anterior=ciclosOrdenados[i];
+        if(anterior.teveRetot&&anterior.dataRetot)return String(anterior.dataRetot).slice(0,10);
+      }
+      return String(p.dataIOT||'').slice(0,10);
+    }
+    function avaliarExtubacoesPeriodo(p,inicio,fim,hoje=obterDataLocalISO()) {
+      // Cada ciclo representa um evento próprio. Não deduplicar pela data:
+      // duas extubações no mesmo dia continuam sendo dois eventos distintos.
+      const ciclos=(p?.ciclos||[]).filter(c=>/^\d{4}-\d{2}-\d{2}$/.test(String(c.dataExt||'').slice(0,10)))
+        .slice().sort((a,b)=>String(a.dataExt).slice(0,10).localeCompare(String(b.dataExt).slice(0,10)));
+      const resultado={total:0,retot:0,falhas48h:0,avaliaveis:0,sucessos:0,pendentes:0,auto:0,acidental:0,programada:0,notificadas:0,diasIOTExt:0,qtdIOTExt:0};
+      ciclos.forEach((c,i)=>{
+        const dataExt=String(c.dataExt).slice(0,10);
+        if(!dataDentroPeriodo(dataExt,inicio,fim))return;
+        // Toda extubação no período entra no total, inclusive fast track e eventos recentes.
+        resultado.total++;
+        if(c.tipoExt==='AUTOEXTUBACAO'){resultado.auto++;if(String(c.numeroNotificacao||'').trim())resultado.notificadas++;}
+        else if(c.tipoExt==='ACIDENTAL'){resultado.acidental++;if(String(c.numeroNotificacao||'').trim())resultado.notificadas++;}
+        else if(c.tipoExt==='PROGRAMADA')resultado.programada++;
+
+        // RETOT é contada pela data em que a reintubação ocorreu, não pela extubação.
+        const dataRetot=String(c.dataRetot||'').slice(0,10);
+        if(c.teveRetot&&dataDentroPeriodo(dataRetot,inicio,fim))resultado.retot++;
+
+        // A taxa de sucesso/falha usa apenas eventos com desfecho conhecido após 48h.
+        // Com datas sem horário, diferenças de 0–1 dia indicam falha; >=2 dias
+        // são avaliadas pelo campo clínico falha48h para resolver a fronteira de 48h.
+        if(c.teveRetot){
+          if(dataRetot&&/^\d{4}-\d{2}-\d{2}$/.test(dataRetot)){
+            const diasAteRetot=diasEntreDatasIOTeTQT(dataExt,dataRetot);
+            if(diasAteRetot!==null&&diasAteRetot>=0){
+              resultado.avaliaveis++;
+              const falha=diasAteRetot<=1 ? true : (diasAteRetot>2 ? false : (typeof c.falha48h==='boolean'?c.falha48h:null));
+              if(falha===true)resultado.falhas48h++;else if(falha===false)resultado.sucessos++;else resultado.pendentes++;
+            } else { resultado.pendentes++; }
+          } else if(c.falha48h===true){
+            // Registro legado: há indicação explícita de falha, embora falte a data RETOT.
+            resultado.avaliaveis++;resultado.falhas48h++;
+          } else if(c.falha48h===false){
+            // Registro legado marcado explicitamente como reintubação tardia.
+            resultado.avaliaveis++;resultado.sucessos++;
+          } else { resultado.pendentes++; }
+        } else {
+          const diasAcompanhamento=diasEntreDatasIOTeTQT(dataExt,hoje);
+          if(diasAcompanhamento!==null&&diasAcompanhamento>=2){resultado.avaliaveis++;resultado.sucessos++;}
+          else resultado.pendentes++;
+        }
+
+        const inicioEpisodio=obterInicioEpisodioExtubacao(p,ciclos,i);
+        const duracao=diasEntreDatasIOTeTQT(inicioEpisodio,dataExt);
+        if(duracao!==null){resultado.diasIOTExt+=duracao;resultado.qtdIOTExt++;}
+      });
+      return resultado;
+    }
+
     function atualizarDashboard() {
       if (usuarioLogado?.perfil === 'convidado') {
         carregarIndicadoresConvidado(
@@ -2336,6 +2399,8 @@
           acidExt: 0,
           totRetot: 0,
           falhas48h: 0,
+          extAvaliaveis: 0,
+          extSucesso: 0,
           tqt: 0,
           obitos: 0,
           internadosDia: 0
@@ -2349,33 +2414,43 @@
         statsPorSetor[s].diasComCenso=base.diasComCenso;
       });
 
-      // AVM-Dia e pacientes distintos já foram calculados separadamente por setor acima.
-      // Não redistribuir registros sem setor reconhecido para UTI Geral ou primeiro filtro.
+      // Eventos são atribuídos ao registro/setor em que foram lançados.
+      // Extubações são avaliadas por episódio e sucesso só é contado após 48h completas.
+      const obitosContadosDash=new Set(), tqtContadasDash=new Set(), decanulContadasDash=new Set();
       pacientes.forEach(p => {
-        const s=normalizarSetorIndicador(p.setor);
-        if(!statsPorSetor[s])return;
-        (p.ciclos||[]).forEach(c=>{
-          if((dtInicio&&(!c.dataExt||c.dataExt<dtInicio))||(dtFim&&(!c.dataExt||c.dataExt>dtFim)))return;
-          const item=statsPorSetor[s]; item.totExt++;
-          if(c.tipoExt==='PROGRAMADA')item.extProg++;
-          else if(c.tipoExt==='AUTOEXTUBACAO'){item.autoExt++;if(String(c.numeroNotificacao||'').trim())item.naoProgNotificadas++;}
-          else if(c.tipoExt==='ACIDENTAL'){item.acidExt++;if(String(c.numeroNotificacao||'').trim())item.naoProgNotificadas++;}
-          const de=diasEntreDatasIOTeTQT(p.dataIOT,c.dataExt);if(de!==null){item.diasIOTExt+=de;item.qtdIOTExt++;}
-          if(c.teveRetot){item.totRetot++;if(c.falha48h)item.falhas48h++;}
-        });
-        if(p.desfecho==='ÓBITO'&&p.dataDesfecho&&(!dtInicio||p.dataDesfecho>=dtInicio)&&(!dtFim||p.dataDesfecho<=dtFim))statsPorSetor[s].obitos++;
-        if(p.dataTQT&&(!dtInicio||p.dataTQT>=dtInicio)&&(!dtFim||p.dataTQT<=dtFim))statsPorSetor[s].tqt++;
-        if(p.dataDecanul&&p.dataTQT&&(!dtInicio||p.dataDecanul>=dtInicio)&&(!dtFim||p.dataDecanul<=dtFim)){const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);if(dd!==null){statsPorSetor[s].diasTQTDecanul+=dd;statsPorSetor[s].qtdTQTDecanul++;}}
+        const s=normalizarSetorIndicador(p.setor),item=statsPorSetor[s];
+        if(!item)return;
+        const ev=avaliarExtubacoesPeriodo(p,dtInicio,dtFim);
+        item.totExt+=ev.total;item.totRetot+=ev.retot;item.falhas48h+=ev.falhas48h;
+        item.extProg+=ev.programada;item.autoExt+=ev.auto;item.acidExt+=ev.acidental;
+        item.naoProgNotificadas+=ev.notificadas;item.diasIOTExt+=ev.diasIOTExt;item.qtdIOTExt+=ev.qtdIOTExt;
+        item.extAvaliaveis+=ev.avaliaveis;item.extSucesso+=ev.sucessos;
+        if(p.desfecho==='ÓBITO'&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
+          const chave=s+'|'+chavePacienteIndicador(p);
+          if(!obitosContadosDash.has(chave)){item.obitos++;obitosContadosDash.add(chave);}
+        }
+        const chaveEventoTQT=s+'|'+chavePacienteIndicador(p)+'|'+String(p.dataTQT||'').slice(0,10);
+        if(dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)&&!tqtContadasDash.has(chaveEventoTQT)){item.tqt++;tqtContadasDash.add(chaveEventoTQT);}
+        // Decanulação é selecionada pela data da decanulação; a TQT pode ter ocorrido em mês anterior.
+        const chaveEventoDec=s+'|'+chavePacienteIndicador(p)+'|'+String(p.dataDecanul||'').slice(0,10);
+        if(p.dataTQT&&dataDentroPeriodo(p.dataDecanul,dtInicio,dtFim)&&!decanulContadasDash.has(chaveEventoDec)){
+          const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);
+          if(dd!==null){item.diasTQTDecanul+=dd;item.qtdTQTDecanul++;decanulContadasDash.add(chaveEventoDec);}
+        }
       });
 
       // Tempo IOT–TQT e total de TQT: considerar a data da TQT no período selecionado,
       // independentemente de a IOT ter ocorrido em período anterior.
+      const iottqtContadasDash=new Set();
       pacientes.forEach(p => {
         const setorPaciente=normalizarSetorIndicador(p.setor);
         if (!setoresFiltro.includes(setorPaciente) || !p.dataTQT) return;
         if (dtInicio && p.dataTQT < dtInicio) return;
         if (dtFim && p.dataTQT > dtFim) return;
         const item = statsPorSetor[setorPaciente];
+        const chaveIOTTQT=setorPaciente+'|'+chavePacienteIndicador(p)+'|'+String(p.dataTQT).slice(0,10);
+        if(iottqtContadasDash.has(chaveIOTTQT))return;
+        iottqtContadasDash.add(chaveIOTTQT);
         const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
         if (diasIOTTQT !== null) {
           item.diasIOTTQT = (item.diasIOTTQT || 0) + diasIOTTQT;
@@ -2395,6 +2470,8 @@
       let globAcidExt = 0;
       let globTotRetot = 0;
       let globFalhas48h = 0;
+      let globExtAvaliaveis = 0;
+      let globExtSucesso = 0;
       let globTQT = 0;
       let globObitos = 0;
       let globNaoProgNotificadas=0,globNaoProg=0,globDiasIOTExt=0,globQtdIOTExt=0,globDiasTQTDecanul=0,globQtdTQTDecanul=0;
@@ -2413,6 +2490,8 @@
         globAcidExt += item.acidExt;
         globTotRetot += item.totRetot;
         globFalhas48h += item.falhas48h;
+        globExtAvaliaveis += item.extAvaliaveis || 0;
+        globExtSucesso += item.extSucesso || 0;
         globTQT += item.tqt;
         globObitos += item.obitos;
         globNaoProgNotificadas+=item.naoProgNotificadas;globNaoProg+=item.autoExt+item.acidExt;
@@ -2422,8 +2501,8 @@
       const globTxUtilizacao = globDiasCenso>0&&globInternadosDia>0 ? ((globAVMDiasTaxa/globInternadosDia)*100).toFixed(1) : '—';
       const globTotNaoProg = globAutoExt + globAcidExt;
       const globTxNaoProg = globTotExt > 0 ? ((globTotNaoProg / globTotExt) * 100).toFixed(1) : '0.0';
-      const globTxSucesso = globTotExt > 0 ? (((globTotExt - globFalhas48h) / globTotExt) * 100).toFixed(1) : '0.0';
-      const globTxFalha = globTotExt > 0 ? ((globFalhas48h / globTotExt) * 100).toFixed(1) : '0.0';
+      const globTxSucesso = globExtAvaliaveis > 0 ? ((globExtSucesso / globExtAvaliaveis) * 100).toFixed(1) : '—';
+      const globTxFalha = globExtAvaliaveis > 0 ? ((globFalhas48h / globExtAvaliaveis) * 100).toFixed(1) : '—';
       const globTxTQT = globPacientesAVM > 0 ? ((globTQT / globPacientesAVM) * 100).toFixed(1) : '0.0';
       const globTxObito = globPacientesAVM > 0 ? ((globObitos / globPacientesAVM) * 100).toFixed(1) : '0.0';
 
@@ -2436,17 +2515,17 @@
       document.getElementById('dashContagemExtRetot').textContent = `${globTotExt} | ${globTotRetot}`;
       document.getElementById('dashExtRetotSub').textContent = `${globTotExt} extubações / ${globTotRetot} RETOTs`;
 
-      document.getElementById('dashTaxaSucesso').textContent = `${globTxSucesso}%`;
-      document.getElementById('dashSucessoSub').textContent = `${globTotExt - globFalhas48h} sem reintubação <48h`;
+      document.getElementById('dashTaxaSucesso').textContent = globTxSucesso==='—'?'—':`${globTxSucesso}%`;
+      document.getElementById('dashSucessoSub').textContent = `${globExtSucesso} sucessos / ${globExtAvaliaveis} avaliáveis; ${Math.max(0,globTotExt-globExtAvaliaveis)} pendentes ou sem avaliação`;
 
-      document.getElementById('dashTaxaFalha').textContent = `${globTxFalha}%`;
-      document.getElementById('dashFalhaSub').textContent = `${globFalhas48h} falhas <48h`;
+      document.getElementById('dashTaxaFalha').textContent = globTxFalha==='—'?'—':`${globTxFalha}%`;
+      document.getElementById('dashFalhaSub').textContent = `${globFalhas48h} falhas / ${globExtAvaliaveis} avaliáveis`;
 
       document.getElementById('dashPacientesDia').textContent = `${globDiasAVM} d`;
       document.getElementById('dashTempoMedioAVM').textContent=globPacientesAVM?(globDiasAVM/globPacientesAVM).toFixed(1)+' d':'—';
       document.getElementById('dashTempoMedioAVMSub').textContent=globPacientesAVM?`AVM-Dia dividido por ${globPacientesAVM} pacientes distintos nos setores selecionados`:'Sem pacientes com AVM no período';
       document.getElementById('dashTaxaTQT').textContent = `${globTxTQT}%`;
-      document.getElementById('dashTQTSub').textContent = `${globTQT} traqueostomias`;
+      document.getElementById('dashTQTSub').textContent = `${globTQT} TQTs / ${globPacientesAVM} pacientes com AVM no período`;
 
       let totalDiasIOTTQT = 0;
       let totalPacientesIOTTQT = 0;
@@ -2462,7 +2541,7 @@
         : 'Sem pacientes com ambas as datas válidas';
 
       document.getElementById('dashTaxaObito').textContent = `${globTxObito}%`;
-      document.getElementById('dashObitoSub').textContent = `${globObitos} óbitos pela data de ocorrência`;
+      document.getElementById('dashObitoSub').textContent = `${globObitos} desfechos ÓBITO pela data do desfecho`;
       document.getElementById('dashTempoIOTExt').textContent=globQtdIOTExt?(globDiasIOTExt/globQtdIOTExt).toFixed(1)+' d':'—';
       document.getElementById('dashTempoIOTExtSub').textContent=globQtdIOTExt?`Média de ${globQtdIOTExt} extubações`:'Sem extubações válidas no período';
       document.getElementById('dashTempoTQTDecanul').textContent=globQtdTQTDecanul?(globDiasTQTDecanul/globQtdTQTDecanul).toFixed(1)+' d':'—';
@@ -2595,11 +2674,11 @@
       const ctxSucessoFalha = document.getElementById('graficoSucessoFalha').getContext('2d');
       const dadosSucesso = setores.map(s => {
         const item = stats[s];
-        return item.totExt > 0 ? parseFloat((((item.totExt - item.falhas48h) / item.totExt) * 100).toFixed(1)) : 0;
+        return item.extAvaliaveis > 0 ? parseFloat(((item.extSucesso / item.extAvaliaveis) * 100).toFixed(1)) : null;
       });
       const dadosFalha = setores.map(s => {
         const item = stats[s];
-        return item.totExt > 0 ? parseFloat(((item.falhas48h / item.totExt) * 100).toFixed(1)) : 0;
+        return item.extAvaliaveis > 0 ? parseFloat(((item.falhas48h / item.extAvaliaveis) * 100).toFixed(1)) : null;
       });
 
       if (chartInst.sucessoFalha) chartInst.sucessoFalha.destroy();
@@ -2846,6 +2925,8 @@
           totExt: 0,
           totRetot: 0,
           falhas48h: 0,
+          extAvaliaveis: 0,
+          extSucesso: 0,
           autoextubacao: 0,
           acidental: 0,
           tqt: 0,
@@ -2869,32 +2950,40 @@
         stats[s].diasAVM=resumo.diasAVM;
         stats[s].diasTotalAVM=resumo.diasAVM;
       });
+      const obitosContadosDados=new Set();
       pacientes.forEach(p=>{
         const s=normalizarSetorIndicador(p.setor); if(!stats[s])return;
-        (p.ciclos||[]).forEach(c=>{
-          if((dtInicio&&(!c.dataExt||c.dataExt<dtInicio))||(dtFim&&(!c.dataExt||c.dataExt>dtFim)))return;
-          stats[s].totExt++;
-          if(c.tipoExt==='AUTOEXTUBACAO'){stats[s].autoextubacao++;if(String(c.numeroNotificacao||'').trim())stats[s].naoProgNotificadas++;}
-          else if(c.tipoExt==='ACIDENTAL'){stats[s].acidental++;if(String(c.numeroNotificacao||'').trim())stats[s].naoProgNotificadas++;}
-          const de=diasEntreDatasIOTeTQT(p.dataIOT,c.dataExt);if(de!==null){stats[s].diasIOTExt+=de;stats[s].qtdIOTExt++;}
-          if(c.teveRetot){stats[s].totRetot++;if(c.falha48h)stats[s].falhas48h++;}
-        });
-        if(p.desfecho==='ÓBITO'&&p.dataDesfecho&&(!dtInicio||p.dataDesfecho>=dtInicio)&&(!dtFim||p.dataDesfecho<=dtFim))stats[s].obitos++;
+        const ev=avaliarExtubacoesPeriodo(p,dtInicio,dtFim);
+        stats[s].totExt+=ev.total;stats[s].totRetot+=ev.retot;stats[s].falhas48h+=ev.falhas48h;
+        stats[s].extAvaliaveis+=ev.avaliaveis;stats[s].extSucesso+=ev.sucessos;
+        stats[s].autoextubacao+=ev.auto;stats[s].acidental+=ev.acidental;stats[s].naoProgNotificadas+=ev.notificadas;
+        stats[s].diasIOTExt+=ev.diasIOTExt;stats[s].qtdIOTExt+=ev.qtdIOTExt;
+        if(p.desfecho==='ÓBITO'&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
+          const chave=s+'|'+chavePacienteIndicador(p);
+          if(!obitosContadosDados.has(chave)){stats[s].obitos++;obitosContadosDados.add(chave);}
+        }
       });
 
-      // Indicador IOT–TQT: incluir casos pela data de realização da TQT no período.
+      // Eventos TQT, IOT–TQT e decanulação são filtrados pela data do próprio evento.
+      const tqtContadasDados=new Set(), decanulContadasDados=new Set(), iottqtContadasDados=new Set();
       pacientes.forEach(p => {
-        if (!p.dataTQT) return;
-        if (dtInicio && p.dataTQT < dtInicio) return;
-        if (dtFim && p.dataTQT > dtFim) return;
-        const s = normalizarSetorIndicador(p.setor);
-        if (!stats[s]) return;
-        stats[s].tqt++;
-        if(p.dataDecanul&&(!dtInicio||p.dataDecanul>=dtInicio)&&(!dtFim||p.dataDecanul<=dtFim)){const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);if(dd!==null){stats[s].diasTQTDecanul+=dd;stats[s].qtdTQTDecanul++;}}
-        const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
-        if (diasIOTTQT !== null) {
-          stats[s].diasIOTTQT = (stats[s].diasIOTTQT || 0) + diasIOTTQT;
-          stats[s].qtdIOTTQT = (stats[s].qtdIOTTQT || 0) + 1;
+        const s=normalizarSetorIndicador(p.setor); if(!stats[s])return;
+        const chavePacienteSetor=s+'|'+chavePacienteIndicador(p);
+        if(dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)){
+          const chaveTQT=chavePacienteSetor+'|'+String(p.dataTQT).slice(0,10);
+          if(!tqtContadasDados.has(chaveTQT)){
+            stats[s].tqt++;tqtContadasDados.add(chaveTQT);
+            const diasIOTTQT=diasEntreDatasIOTeTQT(p.dataIOT,p.dataTQT);
+            if(diasIOTTQT!==null){stats[s].diasIOTTQT=(stats[s].diasIOTTQT||0)+diasIOTTQT;stats[s].qtdIOTTQT=(stats[s].qtdIOTTQT||0)+1;}
+          }
+        }
+        // Não exigir que a TQT também esteja no período: decanulação pode ocorrer meses depois.
+        if(p.dataTQT&&dataDentroPeriodo(p.dataDecanul,dtInicio,dtFim)){
+          const chaveDec=chavePacienteSetor+'|'+String(p.dataDecanul).slice(0,10);
+          if(!decanulContadasDados.has(chaveDec)){
+            const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);
+            if(dd!==null){stats[s].diasTQTDecanul+=dd;stats[s].qtdTQTDecanul++;decanulContadasDados.add(chaveDec);}
+          }
         }
       });
 
@@ -2908,7 +2997,8 @@
 
         const totNaoProg = item.autoextubacao + item.acidental;
         const txNaoProg = item.totExt > 0 ? ((totNaoProg / item.totExt) * 100).toFixed(1) + '%' : '0.0%';
-        const txSucesso = item.totExt > 0 ? (((item.totExt - item.falhas48h) / item.totExt) * 100).toFixed(1) + '%' : '-';
+        const txSucesso = item.extAvaliaveis > 0 ? ((item.extSucesso / item.extAvaliaveis) * 100).toFixed(1) + '%' : '—';
+        const txFalha = item.extAvaliaveis > 0 ? ((item.falhas48h / item.extAvaliaveis) * 100).toFixed(1) + '%' : '—';
         const mediaIOTTQT = item.qtdIOTTQT > 0 ? (item.diasIOTTQT / item.qtdIOTTQT).toFixed(1) + ' d' : '—';
         const mediaIOTExt=item.qtdIOTExt>0?(item.diasIOTExt/item.qtdIOTExt).toFixed(1)+' d':'—';
         const mediaTQTDecanul=item.qtdTQTDecanul>0?(item.diasTQTDecanul/item.qtdTQTDecanul).toFixed(1)+' d':'—';
