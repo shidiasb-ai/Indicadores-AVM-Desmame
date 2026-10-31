@@ -1192,7 +1192,7 @@
     // A publishable key pode estar no frontend; nunca coloque service_role/secret aqui.
     const SUPABASE_URL = 'https://osgvhdgnnoxnvtyccwtu.supabase.co';
     const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9_DuTxxCw2PQNVPhHJi6hw_ZesUJbBI';
-    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storage: window.sessionStorage } });
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
     if (window.ChartDataLabels) {
       Chart.register(ChartDataLabels);
