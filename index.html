@@ -1478,12 +1478,15 @@
       const dias=calcularDiasAVMAtual(p); if(p&&obterInicioAVMNoSetor(p))p.tempoAVM=dias; return dias;
     }
     function somarInternadosDiaSetor(setor,inicio,fim) {
-      if(!inicio||!fim||fim<inicio)return 0; let total=0;
+      if(!inicio||!fim||fim<inicio)return null;
+      let total=0,completo=true;
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
-        const dia=d.toISOString().slice(0,10), valor=censoInternados[dia]?.[setor];
+        const dia=d.toISOString().slice(0,10),valor=censoInternados[dia]?.[setor];
         if(valor!==undefined&&valor!==null&&valor!=='')total+=Math.max(0,Number(valor)||0);
         else if(dia<'2026-10-29')total+=10;
-      } return total;
+        else completo=false;
+      }
+      return completo?total:null;
     }
 
     // Corrige somente pacientes ativos em AVM contínua, sem ciclos ou interrupções documentadas.
@@ -2325,6 +2328,7 @@
       let globDiasAVM = 0;
       let globDiasTotalAVM=0;
       let globInternadosDia = 0;
+      let globOcupacaoCompleta=true;
       let globTotExt = 0;
       let globExtProg = 0;
       let globAutoExt = 0;
@@ -2339,7 +2343,8 @@
         const item = statsPorSetor[s];
         globDiasAVM += item.diasAVM;
         globDiasTotalAVM += item.diasTotalAVM;
-        globInternadosDia += item.internadosDia;
+        if(item.internadosDia===null||item.internadosDia===undefined)globOcupacaoCompleta=false;
+        else globInternadosDia += item.internadosDia;
         globTotExt += item.totExt;
         globExtProg += item.extProg;
         globAutoExt += item.autoExt;
@@ -2352,7 +2357,7 @@
         globDiasIOTExt+=item.diasIOTExt;globQtdIOTExt+=item.qtdIOTExt;globDiasTQTDecanul+=item.diasTQTDecanul;globQtdTQTDecanul+=item.qtdTQTDecanul;
       });
 
-      const globTxUtilizacao = globInternadosDia > 0 ? ((globDiasAVM / globInternadosDia) * 100).toFixed(1) : '0.0';
+      const globTxUtilizacao = globOcupacaoCompleta&&globInternadosDia>0 ? ((globDiasAVM/globInternadosDia)*100).toFixed(1) : '—';
       const globTotNaoProg = globAutoExt + globAcidExt;
       const globTxNaoProg = globTotExt > 0 ? ((globTotNaoProg / globTotExt) * 100).toFixed(1) : '0.0';
       const globTxSucesso = globTotExt > 0 ? (((globTotExt - globFalhas48h) / globTotExt) * 100).toFixed(1) : '0.0';
@@ -2360,8 +2365,8 @@
       const globTxTQT = pacFiltrados.length > 0 ? ((globTQT / pacFiltrados.length) * 100).toFixed(1) : '0.0';
       const globTxObito = pacFiltrados.length > 0 ? ((globObitos / pacFiltrados.length) * 100).toFixed(1) : '0.0';
 
-      document.getElementById('dashTaxaUtilizacao').textContent = `${globTxUtilizacao}%`;
-      document.getElementById('dashUtilizacaoSub').textContent = `${globDiasAVM} AVM-dias / ${globInternadosDia} internados-dias`;
+      document.getElementById('dashTaxaUtilizacao').textContent = globTxUtilizacao==='—'?'—':`${globTxUtilizacao}%`;
+      document.getElementById('dashUtilizacaoSub').textContent = globOcupacaoCompleta?`${globDiasAVM} AVM-dias / ${globInternadosDia} internados-dias`:'Ocupação incompleta no período; taxa não calculada';
 
       document.getElementById('dashTaxaNaoProg').textContent = `${globTxNaoProg}%`;
       document.getElementById('dashNaoProgSub').textContent = `${globTotNaoProg} de ${globTotExt} extubações`;
@@ -2427,7 +2432,7 @@
       const ctxUtil = document.getElementById('graficoUtilizacaoSetor').getContext('2d');
       const dadosUtil = setores.map(s => {
         const item = stats[s];
-        return item.internadosDia > 0 ? parseFloat(((item.diasAVM / item.internadosDia) * 100).toFixed(1)) : 0;
+        return item.internadosDia!==null&&item.internadosDia>0 ? parseFloat(((item.diasAVM/item.internadosDia)*100).toFixed(1)) : null;
       });
 
       if (chartInst.utilizacao) chartInst.utilizacao.destroy();
@@ -2825,8 +2830,8 @@
 
       SETORES_ATIVOS.forEach(set => {
         const item = stats[set] || { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
-        const internadosDia = item.internadosDia || 0;
-        const txUtilizacao = internadosDia > 0 ? ((item.diasAVM / internadosDia) * 100).toFixed(1) + '%' : '—';
+        const internadosDia = item.internadosDia;
+        const txUtilizacao = internadosDia!==null&&internadosDia>0 ? ((item.diasAVM/internadosDia)*100).toFixed(1)+'%' : '—';
 
         const totNaoProg = item.autoextubacao + item.acidental;
         const txNaoProg = item.totExt > 0 ? ((totNaoProg / item.totExt) * 100).toFixed(1) + '%' : '0.0%';
