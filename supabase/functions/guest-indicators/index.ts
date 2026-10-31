@@ -170,7 +170,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const groups = new Map<string, { sector: string; key: string; rows: any[] }>();
+    const groups = new Map<string, { sector: string; key: string; patientKey: string; admission: string; rows: any[] }>();
     for (const row of patients) {
       const p = { ...(row?.dados || {}), app_id: row.app_id };
       const sector = normalizeSector(p.setor || "NÃO INFORMADO");
