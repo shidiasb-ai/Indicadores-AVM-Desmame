@@ -27,7 +27,8 @@ const getStartAVM = (p: any) => {
   const adm=isoDate(p?.dataAdm), iot=isoDate(p?.dataIOT);
   const history=Object.entries(p?.historico||{}).filter(([d,v])=>isoDate(d)&&v==="AVM"&&(!adm||String(d)>=adm)).map(([d])=>String(d)).sort();
   if(iot&&(!adm||iot>=adm))return iot;
-  if(adm)return history[0]||"";
+  // Paciente já chega intubado ao setor: a contagem setorial começa na admissão.
+  if(adm)return adm;
   return iot||history[0]||"";
 };
 const getEvents = (p: any, start: string) => {
@@ -55,6 +56,26 @@ const avmDays = (p:any,start:string,end:string) => {
   const events=getEvents(p,beginning);let count=0;
   for(let d=new Date(from+"T00:00:00Z");d<=new Date(stop+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+1))if(isAVMOnDay(events,d.toISOString().slice(0,10)))count++;
   return count;
+};
+const normalizeSector = (value: unknown) => {
+  const s=String(value||"").trim().toUpperCase();
+  return s==="SALA VERMELHA"||s==="UTI VERMELHA"?"VERMELHA":s;
+};
+const patientKey = (p:any) => {
+  const reg=String(p?.registro||p?.prontuario||"").trim().toUpperCase().replace(/\\s+/g,"");
+  if(reg)return "R:"+reg;
+  const name=String(p?.nome||"").trim().toUpperCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").replace(/\\s+/g," ");
+  return name?"N:"+name:"ID:"+String(p?.id||p?.app_id||"");
+};
+const belongsEventToSector = (p:any,eventDate:string) => {
+  const adm=isoDate(p?.dataAdm);
+  // Sem data de admissão não é possível validar a atribuição setorial do evento.
+  return !!adm && !!eventDate && eventDate>=adm;
+};
+const isRecordAVMOnDay = (p:any,day:string) => {
+  const start=getStartAVM(p),outcome=isoDate(p?.dataDesfecho);
+  if(!start||day<start||(String(p?.desfecho||"").toUpperCase()!=="ATIVO"&&outcome&&day>outcome))return false;
+  return isAVMOnDay(getEvents(p,start),day);
 };
 const totalAVMDuration = (p:any) => {
   const start=getStartAVM(p);if(!start)return 0;
@@ -139,49 +160,37 @@ Deno.serve(async (req) => {
         if (daily[date]) { daily[date].internados = (daily[date].internados||0) + count; censoPresente[date].add(sector); censoSetorDia[date][sector]=count; }
       }
     }
-    for(const day of Object.keys(daily)){
-      let dailyComplete=true;
-      for(const sector of Object.keys(stats)){
-        if(censoPresente[day]?.has(sector))continue;
-        if(day<"2026-10-29"){stats[sector].internadosDia+=10;daily[day].internados=(daily[day].internados||0)+10;censoSetorDia[day][sector]=10;}
-        else{stats[sector].ocupacaoCompleta=false;dailyComplete=false;}
-      }
-      if(!dailyComplete)daily[day].internados=null;
+    // Agrupa os vários registros/ciclos do mesmo paciente no mesmo setor.
+    // A contagem diária usa a união dos episódios, sem somar duas vezes o mesmo paciente-dia.
+    const patientGroups=new Map<string,{sector:string;key:string;rows:any[]}>();
+    for(const row of patients){
+      const p=row?.dados||{};
+      const sector=normalizeSector(p.setor||"NÃO INFORMADO");
+      const key=sector+"|"+patientKey(p);
+      if(!patientGroups.has(key))patientGroups.set(key,{sector,key,rows:[]});
+      patientGroups.get(key)!.rows.push({...p,id:row.app_id});
     }
-
     for(const day of Object.keys(daily)){
-      for(const sector of Object.keys(stats)){
-        if(censoSetorDia[day]?.[sector]===undefined)continue;
-        stats[sector].avmDiasTaxa=(stats[sector].avmDiasTaxa||0)+patients.filter(row=>{
-          const p=row?.dados||{};
-          if(String(p.setor||"").trim()!==sector)return false;
-          const start=getStartAVM(p),outcome=isoDate(p.dataDesfecho);
-          if(!start||day<start||(String(p.desfecho||"").toUpperCase()!=="ATIVO"&&outcome&&day>outcome))return false;
-          return isAVMOnDay(getEvents(p,start),day);
-        }).length;
+      for(const group of patientGroups.values()){
+        if(group.rows.some(p=>isRecordAVMOnDay(p,day))){
+          const s=ensure(group.sector);
+          s.avmDiasTaxa=(s.avmDiasTaxa||0)+1;
+          daily[day].avm+=1;
+        }
       }
     }
     for (const row of patients) {
       const p = row?.dados || {};
       const iot = isoDate(p.dataIOT);
       const outcomeDate = isoDate(p.dataDesfecho);
-      const sector = String(p.setor || "NÃO INFORMADO").trim().slice(0, 80) || "NÃO INFORMADO";
+      const sector = normalizeSector(p.setor || "NÃO INFORMADO").slice(0, 80) || "NÃO INFORMADO";
       const s = ensure(sector);
       const diasNoPeriodo=avmDays(p,startDate,endDate);
-      if(diasNoPeriodo>0){
-        s.pacientesAVM+=1;
-        s.diasAVM+=diasNoPeriodo;
-        s.diasTotalAVM+=diasNoPeriodo;
-      }
       if(startDate&&iot&&iot> endDate)continue;
       if(startDate&&outcomeDate&&outcomeDate<startDate&&diasNoPeriodo===0)continue;
       s.total += 1;
       const tqtDate = isoDate(p.dataTQT);
-      if (tqtDate) s.tqt += 1;
-      if (iot && tqtDate && tqtDate >= iot) {
-        s.diasIOTTQT += daysBetween(iot, tqtDate) || 0;
-        s.qtdIOTTQT += 1;
-      }
+      // TQT é agregada por paciente/setor/data após percorrer os registros abaixo.
       const outcome = String(p.desfecho || "").toUpperCase();
       if (outcome === "ÓBITO") { s.obitos += 1; s.desfechos.obitos += 1; }
       else if (outcome === "ATIVO") s.desfechos.ativos += 1;
@@ -211,6 +220,32 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Consolidar AVM-pacientes, AVM-Dia e eventos TQT sem duplicar ciclos/registros.
+    for(const group of patientGroups.values()){
+      const s=ensure(group.sector);
+      let patientAVMDays=0;
+      for(const day of Object.keys(daily)){
+        if(group.rows.some(p=>isRecordAVMOnDay(p,day)))patientAVMDays++;
+      }
+      if(patientAVMDays>0){
+        s.pacientesAVM++;
+        s.diasAVM+=patientAVMDays;
+        s.diasTotalAVM+=patientAVMDays;
+      }
+      const tqtEvents=new Map<string,any>();
+      for(const p of group.rows){
+        const tqtDate=isoDate(p.dataTQT),iot=isoDate(p.dataIOT);
+        if(!tqtDate||!inside(tqtDate,startDate,endDate)||!belongsEventToSector(p,tqtDate))continue;
+        if(!iot||iot>tqtDate)continue;
+        const existing=tqtEvents.get(tqtDate);
+        if(!existing||iot>isoDate(existing.dataIOT))tqtEvents.set(tqtDate,p);
+      }
+      for(const [tqtDate,p] of tqtEvents){
+        s.tqt++;
+        const iot=isoDate(p.dataIOT),duration=daysBetween(iot,tqtDate);
+        if(duration!==null){s.diasIOTTQT+=duration;s.qtdIOTTQT++;}
+      }
+    }
     const sectors = Object.values(stats).map((s: any) => {
       const nonProgrammed = s.autoextubacao + s.acidental;
       return {
