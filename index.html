@@ -1430,15 +1430,9 @@
       if (!p) return '';
       const adm=String(p.dataAdm||'').slice(0,10);
       const iot=String(p.dataIOT||'').slice(0,10);
-      const dataValida=d=>/^\d{4}-\d{2}-\d{2}$/.test(d);
-      // O acompanhamento no setor começa na data mais tardia entre admissão
-      // no setor e IOT. Assim, não se contabiliza ventilação de outro hospital/setor.
-      if(dataValida(adm)&&dataValida(iot))return adm>iot?adm:iot;
-      if(dataValida(adm))return adm;
-      if(dataValida(iot))return iot;
-      const diasHistorico=Object.keys(p.historico||{})
-        .filter(d=>dataValida(d)&&p.historico[d]==='AVM').sort();
-      return diasHistorico[0]||'';
+      const valid=d=>/^\d{4}-\d{2}-\d{2}$/.test(d);
+      if(!valid(adm))return '';
+      return valid(iot)&&iot>adm?iot:adm;
     }
     function obterEventosAVM(p,inicio) {
       const ev=[{data:inicio,avm:true,ordem:0}];
@@ -1495,7 +1489,8 @@
       return contarAVMDiasNoPeriodo(p,inicio,[fimClinico,hoje].sort()[0]);
     }
     function calcularDiasAVMAtual(p, dataReferencia=obterDataLocalISO()) {
-      const inicio=obterInicioAVMNoSetor(p); return inicio?contarAVMDiasNoPeriodo(p,inicio,dataReferencia):(Number(p?.tempoAVM)||0);
+      const inicio=obterInicioAVMNoSetor(p);
+      return inicio?contarAVMDiasNoPeriodo(p,inicio,dataReferencia):0;
     }
     function atualizarDiasAVMDoPaciente(p) {
       const dias=calcularDiasAVMAtual(p); if(p&&obterInicioAVMNoSetor(p))p.tempoAVM=dias; return dias;
@@ -1511,8 +1506,41 @@
       const nome=String(p?.nome||'').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ');
       return nome?'N:'+nome:'SEM-ID:'+String(p?.id||'');
     }
-    function obterResumoAVMSetor(setor,inicio,fim) {
-      const pacientesSetor=pacientes.filter(p=>normalizarSetorIndicador(p.setor)===setor);
+        function consolidarPacientesPorSetor(lista=pacientes) {
+      const grupos=new Map();
+      (lista||[]).forEach(p=>{
+        const setor=normalizarSetorIndicador(p.setor),chave=setor+'|'+chavePacienteIndicador(p);
+        if(!grupos.has(chave))grupos.set(chave,{setor,rows:[]});
+        grupos.get(chave).rows.push(p);
+      });
+      return [...grupos.values()].map(g=>{
+        const rows=g.rows;
+        const validDates=xs=>xs.map(x=>String(x||'').slice(0,10)).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+        const adm=validDates(rows.map(p=>p.dataAdm))[0]||'';
+        const iot=validDates(rows.map(p=>p.dataIOT))[0]||'';
+        const historico={};
+        rows.forEach(p=>Object.entries(p.historico||{}).forEach(([d,status])=>{
+          const rowAdm=String(p.dataAdm||'').slice(0,10);
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!rowAdm||d<rowAdm)return;
+          const v=String(status||'').toUpperCase(),old=historico[d];
+          const off=x=>x==='RE'||x==='DESCONEXÃO'||x==='DESCONEXAO';
+          if(!old||off(v)||!off(old))historico[d]=v;
+        }));
+        const ciclosMap=new Map();
+        rows.forEach(p=>(Array.isArray(p.ciclos)?p.ciclos:[]).forEach(c=>{
+          const k=[c.ciclo||c.numeroCiclo||'',c.dataExt||'',c.tipoExt||'',c.dataRetot||'',c.teveRetot?'1':'0',c.numeroNotificacao||''].join('|');
+          if(!ciclosMap.has(k))ciclosMap.set(k,{...c});
+        }));
+        const tqt=validDates(rows.map(p=>p.dataTQT)),decan=validDates(rows.map(p=>p.dataDecanul));
+        const outcomes=rows.filter(p=>p.desfecho&&p.dataDesfecho).sort((a,b)=>String(b.dataDesfecho).localeCompare(String(a.dataDesfecho)));
+        return {...rows[0],setor:g.setor,dataAdm:adm,dataIOT:iot,historico,ciclos:[...ciclosMap.values()],
+          dataTQT:tqt[0]||'',dataDecanul:decan[0]||'',_eventosTQT:tqt,_eventosDecan:decan,
+          desfecho:outcomes[0]?.desfecho||rows[0].desfecho,dataDesfecho:outcomes[0]?.dataDesfecho||rows[0].dataDesfecho,
+          _registrosOriginais:rows};
+      });
+    }
+function obterResumoAVMSetor(setor,inicio,fim) {
+      const pacientesSetor=consolidarPacientesPorSetor().filter(p=>p.setor===setor);
       const distintos=new Set();let diasAVM=0;
       if(!inicio||!fim||fim<inicio)return {pacientes:0,diasAVM:0};
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
@@ -1525,14 +1553,11 @@
     function calcularBaseTaxaUtilizacaoAVM(setor,inicio,fim) {
       const base={avmDias:0,internadosDia:0,diasComCenso:0};
       if(!inicio||!fim||fim<inicio)return base;
-      const pacientesSetor=pacientes.filter(p=>normalizarSetorIndicador(p.setor)===setor);
+      const pacientesSetor=consolidarPacientesPorSetor().filter(p=>p.setor===setor);
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
         const dia=d.toISOString().slice(0,10),valor=censoInternados[dia]?.[setor];
         let ocupacao=null;
-        if(valor!==undefined&&valor!==null&&String(valor).trim()!==''){
-          const n=Number(valor);if(Number.isFinite(n)&&n>=0)ocupacao=n;
-        }
-        // Sem censo informado, o denominador fica indisponível; não estimar ocupação.
+        if(valor!==undefined&&valor!==null&&String(valor).trim()!==''){const n=Number(valor);if(Number.isFinite(n)&&n>=0)ocupacao=n;}
         if(ocupacao===null)continue;
         base.diasComCenso++;base.internadosDia+=ocupacao;
         const doDia=new Set();
