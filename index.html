@@ -1509,19 +1509,20 @@
         function consolidarPacientesPorSetor(lista=pacientes) {
       const grupos=new Map();
       (lista||[]).forEach(p=>{
-        const setor=normalizarSetorIndicador(p.setor),chave=setor+'|'+chavePacienteIndicador(p);
+        const setor=normalizarSetorIndicador(p.setor),adm=String(p.dataAdm||'').slice(0,10);
+        const chave=setor+'|'+chavePacienteIndicador(p)+'|'+adm;
         if(!grupos.has(chave))grupos.set(chave,{setor,rows:[]});
         grupos.get(chave).rows.push(p);
       });
       return [...grupos.values()].map(g=>{
         const rows=g.rows;
-        const validDates=xs=>xs.map(x=>String(x||'').slice(0,10)).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+        const validDates=xs=>xs.map(x=>String(x||'').slice(0,10)).filter(d=>/^\\d{4}-\\d{2}-\\d{2}$/.test(d)).sort();
         const adm=validDates(rows.map(p=>p.dataAdm))[0]||'';
         const iot=validDates(rows.map(p=>p.dataIOT))[0]||'';
         const historico={};
         rows.forEach(p=>Object.entries(p.historico||{}).forEach(([d,status])=>{
           const rowAdm=String(p.dataAdm||'').slice(0,10);
-          if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!rowAdm||d<rowAdm)return;
+          if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(d)||!rowAdm||d<rowAdm)return;
           const v=String(status||'').toUpperCase(),old=historico[d];
           const off=x=>x==='RE'||x==='DESCONEXÃO'||x==='DESCONEXAO';
           if(!old||off(v)||!off(old))historico[d]=v;
@@ -2426,8 +2427,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       const dtFim = document.getElementById('filtroDashFim').value;
       const setoresFiltro = [...setoresSelecionadosDash];
 
-      const pacFiltradosBrutos = pacientes.filter(p => setoresFiltro.includes(normalizarSetorIndicador(p.setor)) && contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
-      const pacFiltrados = Array.from(new Map(pacFiltradosBrutos.map(p=>[normalizarSetorIndicador(p.setor)+'|'+chavePacienteIndicador(p),p])).values());
+      const pacFiltrados = consolidarPacientesPorSetor().filter(p => setoresFiltro.includes(normalizarSetorIndicador(p.setor)) && contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
 
       const statsPorSetor = {};
       setoresFiltro.forEach(s => {
