@@ -2338,7 +2338,7 @@
       // AVM-Dia e pacientes distintos já foram calculados separadamente por setor acima.
       // Não redistribuir registros sem setor reconhecido para UTI Geral ou primeiro filtro.
       pacientes.forEach(p => {
-        const s=p.setor;
+        const s=normalizarSetorIndicador(p.setor);
         if(!statsPorSetor[s])return;
         (p.ciclos||[]).forEach(c=>{
           if((dtInicio&&(!c.dataExt||c.dataExt<dtInicio))||(dtFim&&(!c.dataExt||c.dataExt>dtFim)))return;
