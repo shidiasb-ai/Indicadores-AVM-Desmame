@@ -1437,7 +1437,7 @@
     function obterEventosAVM(p,inicio) {
       const ev=[{data:inicio,avm:true,ordem:0}];
       Object.entries(p?.historico||{}).forEach(([data,status])=>{
-        if(data>=inicio&&/^\d{4}-\d{2}-\d{2}$/.test(data)){const st=String(status||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');ev.push({data,avm:st==='AVM',ordem:2});}
+        if(data>=inicio&&/^\d{4}-\d{2}-\d{2}$/.test(data)){const st=String(status||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');if(st==='AVM'||st==='RE'||st==='DESCONEXAO')ev.push({data,avm:st==='AVM',ordem:2});}
       });
       (p?.ciclos||[]).forEach(c=>{
         const ext=String(c.dataExt||'').slice(0,10),ret=String(c.dataRetot||'').slice(0,10);
