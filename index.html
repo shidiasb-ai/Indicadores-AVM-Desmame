@@ -2427,17 +2427,48 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       return resultado;
     }
 
+    // Outubro/2026 é legado e ainda não possui histórico suficiente validado para indicadores.
+    // Os registros permanecem disponíveis; somente a exibição dos indicadores é bloqueada.
+    const INICIO_PERIODO_VALIDADO_INDICADORES = '2026-11-01';
+    function protegerIndicadoresHistoricos(origem, inicio, fim) {
+      const pane = document.getElementById(origem === 'dashboard' ? 'aba-dashboard' : 'aba-dados');
+      if (!pane) return true;
+      const invalido = !inicio || !fim || fim < inicio || fim < INICIO_PERIODO_VALIDADO_INDICADORES || inicio < INICIO_PERIODO_VALIDADO_INDICADORES;
+      const seletor = origem === 'dashboard' ? '.kpi-grid, .charts-grid' : '.table-box';
+      pane.querySelectorAll(seletor).forEach(el => {
+        if (invalido) {
+          if (el.dataset.displayAntesBloqueio === undefined) el.dataset.displayAntesBloqueio = el.style.display || '';
+          el.style.display = 'none';
+        } else if (el.dataset.displayAntesBloqueio !== undefined) {
+          el.style.display = el.dataset.displayAntesBloqueio;
+          delete el.dataset.displayAntesBloqueio;
+        }
+      });
+      const id = 'avisoHistoricoNaoValidado-' + origem;
+      let aviso = document.getElementById(id);
+      if (invalido) {
+        if (!aviso) {
+          aviso = document.createElement('div');
+          aviso.id = id;
+          aviso.className = 'card';
+          aviso.style.cssText = 'margin:12px 0;border-left:4px solid var(--warning);background:var(--card-bg);';
+          aviso.innerHTML = '<strong>Indicadores históricos temporariamente indisponíveis</strong><p style="margin:8px 0 0;color:var(--text-muted)">Os registros de outubro/2026 estão preservados, mas ainda não possuem histórico completo validado para garantir cálculos confiáveis. Os indicadores serão liberados para períodos integralmente a partir de 01/11/2026. Você pode continuar consultando os pacientes e seus registros na aba “Todos os Registros”.</p>';
+          pane.prepend(aviso);
+        }
+        return true;
+      }
+      if (aviso) aviso.remove();
+      return false;
+    }
+
     function atualizarDashboard() {
+      const dtInicio = document.getElementById('filtroDashInicio')?.value || '';
+      const dtFim = document.getElementById('filtroDashFim')?.value || '';
+      if (protegerIndicadoresHistoricos('dashboard', dtInicio, dtFim)) return;
       if (usuarioLogado?.perfil === 'convidado') {
-        carregarIndicadoresConvidado(
-          document.getElementById('filtroDashInicio')?.value || '',
-          document.getElementById('filtroDashFim')?.value || '',
-          'dashboard'
-        ).then(renderizarDashboardConvidado);
+        carregarIndicadoresConvidado(dtInicio, dtFim, 'dashboard').then(renderizarDashboardConvidado);
         return;
       }
-      const dtInicio = document.getElementById('filtroDashInicio').value;
-      const dtFim = document.getElementById('filtroDashFim').value;
       const setoresFiltro = [...setoresSelecionadosDash];
 
       const gruposFiltrados = consolidarPacientesPorSetor().filter(p => setoresFiltro.includes(normalizarSetorIndicador(p.setor)) && contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
@@ -2959,16 +2990,13 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     }
 
     function calcularAbaDados() {
-      if (usuarioLogado?.perfil === 'convidado') {
-        carregarIndicadoresConvidado(
-          document.getElementById('filtroDadosInicio')?.value || '',
-          document.getElementById('filtroDadosFim')?.value || '',
-          'dados'
-        ).then(renderizarDadosConvidado);
-        return;
-      }
       const dtInicio = document.getElementById('filtroDadosInicio')?.value || '';
       const dtFim = document.getElementById('filtroDadosFim')?.value || '';
+      if (protegerIndicadoresHistoricos('dados', dtInicio, dtFim)) return;
+      if (usuarioLogado?.perfil === 'convidado') {
+        carregarIndicadoresConvidado(dtInicio, dtFim, 'dados').then(renderizarDadosConvidado);
+        return;
+      }
       const stats = {};
 
       SETORES_ATIVOS.forEach(s => {
