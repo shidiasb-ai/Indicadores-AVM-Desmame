@@ -2301,10 +2301,16 @@
     function tqtPertenceAoSetor(p) {
       const tqt=String(p?.dataTQT||'').slice(0,10);
       const adm=String(p?.dataAdm||'').slice(0,10);
-      if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(tqt))return false;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(tqt))return false;
       // Cadastros legados sem admissão no setor permanecem utilizáveis.
       // Nos novos registros, evento anterior à entrada não pertence ao setor.
-      return !/^\\d{4}-\\d{2}-\\d{2}$/.test(adm)||tqt>=adm;
+      return !/^\d{4}-\d{2}-\d{2}$/.test(adm)||tqt>=adm;
+    }
+    function dataDoEventoPertenceAoSetor(p,dataEvento) {
+      const evento=String(dataEvento||'').slice(0,10);
+      const adm=String(p?.dataAdm||'').slice(0,10);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(evento))return false;
+      return !/^\d{4}-\d{2}-\d{2}$/.test(adm)||evento>=adm;
     }
     function obterEventosIOTTQTUnicos(listaPacientes,setoresPermitidos,inicio,fim) {
       const eventos=new Map();
@@ -2314,7 +2320,7 @@
         const iot=String(p.dataIOT||'').slice(0,10);
         if(setoresPermitidos&&!setoresPermitidos.includes(setor))return;
         if(!tqtPertenceAoSetor(p)||!dataDentroPeriodo(tqt,inicio,fim))return;
-        if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(iot)||iot>tqt)return;
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(iot)||iot>tqt)return;
         const chave=setor+'|'+chavePacienteIndicador(p)+'|'+tqt;
         const atual=eventos.get(chave);
         // Se o mesmo procedimento foi replicado em registros de ciclos,
@@ -2337,13 +2343,17 @@
       return /^\d{4}-\d{2}-\d{2}$/.test(d)&&(!inicio||d>=inicio)&&(!fim||d<=fim);
     }
     function obterInicioEpisodioExtubacao(p,ciclosOrdenados,indice) {
-      // Cada extubação é relacionada à IOT que iniciou aquele episódio.
-      // Após RETOT, o episódio seguinte começa na data da reintubação.
+      const dataExt=String(ciclosOrdenados[indice]?.dataExt||'').slice(0,10);
+      const adm=String(p?.dataAdm||'').slice(0,10);
       for(let i=indice-1;i>=0;i--){
-        const anterior=ciclosOrdenados[i];
-        if(anterior.teveRetot&&anterior.dataRetot)return String(anterior.dataRetot).slice(0,10);
+        const anterior=ciclosOrdenados[i],ret=String(anterior.dataRetot||'').slice(0,10);
+        if(anterior.teveRetot&&/^\d{4}-\d{2}-\d{2}$/.test(ret)&&ret<=dataExt)return ret;
       }
-      return String(p.dataIOT||'').slice(0,10);
+      const iot=String(p?.dataIOT||'').slice(0,10);
+      const iotOk=/^\d{4}-\d{2}-\d{2}$/.test(iot)?iot:'';
+      const admOk=/^\d{4}-\d{2}-\d{2}$/.test(adm)?adm:'';
+      if(iotOk&&admOk)return iotOk>admOk?iotOk:admOk;
+      return iotOk||admOk;
     }
     function avaliarExtubacoesPeriodo(p,inicio,fim,hoje=obterDataLocalISO()) {
       // Cada ciclo representa um evento próprio. Não deduplicar pela data:
@@ -2459,9 +2469,9 @@
         if(tqtPertenceAoSetor(p)&&dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)&&!tqtContadasDash.has(chaveEventoTQT)){item.tqt++;tqtContadasDash.add(chaveEventoTQT);}
         // Decanulação é selecionada pela data da decanulação; a TQT pode ter ocorrido em mês anterior.
         const chaveEventoDec=s+'|'+chavePacienteIndicador(p)+'|'+String(p.dataDecanul||'').slice(0,10);
-        if(p.dataTQT&&dataDentroPeriodo(p.dataDecanul,dtInicio,dtFim)&&!decanulContadasDash.has(chaveEventoDec)){
+        if(p.dataTQT&&dataDentroPeriodo(p.dataDecanul,dtInicio,dtFim)&&dataDoEventoPertenceAoSetor(p,p.dataDecanul)&&!decanulContadasDash.has(chaveEventoDec)){
           const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);
-          if(dd!==null){item.diasTQTDecanul+=dd;item.qtdTQTDecanul++;decanulContadasDash.add(chaveEventoDec);}
+          if(dd!==null&&dd>=0){item.diasTQTDecanul+=dd;item.qtdTQTDecanul++;decanulContadasDash.add(chaveEventoDec);}
         }
       });
 
@@ -3007,11 +3017,11 @@
           }
         }
         // Não exigir que a TQT também esteja no período: decanulação pode ocorrer meses depois.
-        if(p.dataTQT&&dataDentroPeriodo(p.dataDecanul,dtInicio,dtFim)){
+        if(p.dataTQT&&dataDentroPeriodo(p.dataDecanul,dtInicio,dtFim)&&dataDoEventoPertenceAoSetor(p,p.dataDecanul)){
           const chaveDec=chavePacienteSetor+'|'+String(p.dataDecanul).slice(0,10);
           if(!decanulContadasDados.has(chaveDec)){
             const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);
-            if(dd!==null){stats[s].diasTQTDecanul+=dd;stats[s].qtdTQTDecanul++;decanulContadasDados.add(chaveDec);}
+            if(dd!==null&&dd>=0){stats[s].diasTQTDecanul+=dd;stats[s].qtdTQTDecanul++;decanulContadasDados.add(chaveDec);}
           }
         }
       });
