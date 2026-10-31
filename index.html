@@ -2309,8 +2309,8 @@
     function dataDoEventoPertenceAoSetor(p,dataEvento) {
       const evento=String(dataEvento||'').slice(0,10);
       const adm=String(p?.dataAdm||'').slice(0,10);
-      if(!/^\d{4}-\d{2}-\d{2}$/.test(evento))return false;
-      return !/^\d{4}-\d{2}-\d{2}$/.test(adm)||evento>=adm;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(evento)||!/^\d{4}-\d{2}-\d{2}$/.test(adm))return false;
+      return evento>=adm;
     }
     function obterEventosIOTTQTUnicos(listaPacientes,setoresPermitidos,inicio,fim) {
       const eventos=new Map();
@@ -2347,7 +2347,9 @@
       const adm=String(p?.dataAdm||'').slice(0,10);
       for(let i=indice-1;i>=0;i--){
         const anterior=ciclosOrdenados[i],ret=String(anterior.dataRetot||'').slice(0,10);
-        if(anterior.teveRetot&&/^\d{4}-\d{2}-\d{2}$/.test(ret)&&ret<=dataExt)return ret;
+        if(anterior.teveRetot&&/^\d{4}-\d{2}-\d{2}$/.test(ret)&&ret<=dataExt){
+          return adm&&/^\d{4}-\d{2}-\d{2}$/.test(adm)&&adm>ret?adm:ret;
+        }
       }
       const iot=String(p?.dataIOT||'').slice(0,10);
       const iotOk=/^\d{4}-\d{2}-\d{2}$/.test(iot)?iot:'';
@@ -2398,9 +2400,13 @@
           else resultado.pendentes++;
         }
 
-        const inicioEpisodio=obterInicioEpisodioExtubacao(p,ciclos,i);
-        const duracao=diasEntreDatasIOTeTQT(inicioEpisodio,dataExt);
-        if(duracao!==null){resultado.diasIOTExt+=duracao;resultado.qtdIOTExt++;}
+        // O tempo só é atribuído ao setor quando há admissão setorial válida
+        // e a extubação ocorreu durante essa permanência.
+        if(dataDoEventoPertenceAoSetor(p,dataExt)){
+          const inicioEpisodio=obterInicioEpisodioExtubacao(p,ciclos,i);
+          const duracao=diasEntreDatasIOTeTQT(inicioEpisodio,dataExt);
+          if(duracao!==null&&duracao>=0){resultado.diasIOTExt+=duracao;resultado.qtdIOTExt++;}
+        }
       });
       return resultado;
     }
