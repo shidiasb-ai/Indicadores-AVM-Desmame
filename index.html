@@ -1468,10 +1468,12 @@
       const fimClinico=p.desfecho&&p.desfecho!=='ATIVO'&&p.dataDesfecho?String(p.dataDesfecho).slice(0,10):hoje;
       const inicio=inicioAVM>inicioPeriodo?inicioAVM:inicioPeriodo;
       const fim=[fimPeriodo,fimClinico,hoje].sort()[0];if(fim<inicio)return 0;
-      const eventos=obterEventosAVM(p,inicioAVM);let total=0;
+      let total=0;
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
         const dia=d.toISOString().slice(0,10);
-        if(estadoAVMNaData(eventos,dia))total++;
+        // Usa a mesma regra dos apontamentos diários: o senso explícito prevalece
+        // sobre a inferência feita a partir das datas de extubação/RETOT.
+        if(pacienteEmAVMNaData(p,dia,inicioAVM))total++;
       }
       return total;
     }
@@ -1487,9 +1489,32 @@
     function atualizarDiasAVMDoPaciente(p) {
       const dias=calcularDiasAVMAtual(p); if(p&&obterInicioAVMNoSetor(p))p.tempoAVM=dias; return dias;
     }
+    function normalizarSetorIndicador(valor) {
+      const setor=String(valor||'').trim().toUpperCase();
+      if(setor==='SALA VERMELHA'||setor==='UTI VERMELHA')return 'VERMELHA';
+      return setor;
+    }
+    function chavePacienteIndicador(p) {
+      const registro=String(p?.registro||p?.prontuario||'').trim().toUpperCase().replace(/\s+/g,'');
+      if(registro)return 'R:'+registro;
+      const nome=String(p?.nome||'').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ');
+      return nome?'N:'+nome:'SEM-ID:'+String(p?.id||'');
+    }
+    function obterResumoAVMSetor(setor,inicio,fim) {
+      const pacientesSetor=pacientes.filter(p=>normalizarSetorIndicador(p.setor)===setor);
+      const distintos=new Set();let diasAVM=0;
+      if(!inicio||!fim||fim<inicio)return {pacientes:0,diasAVM:0};
+      for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
+        const dia=d.toISOString().slice(0,10),doDia=new Set();
+        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chavePacienteIndicador(p));});
+        doDia.forEach(k=>distintos.add(k));diasAVM+=doDia.size;
+      }
+      return {pacientes:distintos.size,diasAVM};
+    }
     function calcularBaseTaxaUtilizacaoAVM(setor,inicio,fim) {
       const base={avmDias:0,internadosDia:0,diasComCenso:0};
       if(!inicio||!fim||fim<inicio)return base;
+      const pacientesSetor=pacientes.filter(p=>normalizarSetorIndicador(p.setor)===setor);
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
         const dia=d.toISOString().slice(0,10),valor=censoInternados[dia]?.[setor];
         let ocupacao=null;
@@ -1498,7 +1523,9 @@
         } else if(dia<'2026-10-29') ocupacao=10;
         if(ocupacao===null)continue;
         base.diasComCenso++;base.internadosDia+=ocupacao;
-        base.avmDias+=pacientes.filter(p=>p.setor===setor&&pacienteEmAVMNaData(p,dia)).length;
+        const doDia=new Set();
+        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chavePacienteIndicador(p));});
+        base.avmDias+=doDia.size;
       }
       return base;
     }
@@ -2278,14 +2305,16 @@
       const dtFim = document.getElementById('filtroDashFim').value;
       const setoresFiltro = [...setoresSelecionadosDash];
 
-      const pacFiltrados = pacientes.filter(p => setoresFiltro.includes(p.setor) && contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
+      const pacFiltradosBrutos = pacientes.filter(p => setoresFiltro.includes(normalizarSetorIndicador(p.setor)) && contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
+      const pacFiltrados = Array.from(new Map(pacFiltradosBrutos.map(p=>[normalizarSetorIndicador(p.setor)+'|'+chavePacienteIndicador(p),p])).values());
 
       const statsPorSetor = {};
       setoresFiltro.forEach(s => {
+        const resumo=obterResumoAVMSetor(s,dtInicio,dtFim);
         statsPorSetor[s] = {
-          diasAVM: 0,
-          diasTotalAVM:0,
-          totalPacientes: 0,
+          diasAVM: resumo.diasAVM,
+          diasTotalAVM: resumo.diasAVM,
+          totalPacientes: resumo.pacientes,
           naoProgNotificadas: 0, diasIOTExt: 0, qtdIOTExt: 0, diasTQTDecanul: 0, qtdTQTDecanul: 0,
           totExt: 0,
           extProg: 0,
@@ -2306,13 +2335,8 @@
         statsPorSetor[s].diasComCenso=base.diasComCenso;
       });
 
-      pacFiltrados.forEach(p => {
-        const s = statsPorSetor[p.setor] ? p.setor : setoresFiltro[0];
-        statsPorSetor[s].totalPacientes++;
-        statsPorSetor[s].diasAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
-        statsPorSetor[s].diasTotalAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
-
-      });
+      // AVM-Dia e pacientes distintos já foram calculados separadamente por setor acima.
+      // Não redistribuir registros sem setor reconhecido para UTI Geral ou primeiro filtro.
       pacientes.forEach(p => {
         const s=p.setor;
         if(!statsPorSetor[s])return;
@@ -2346,6 +2370,7 @@
 
       let globDiasAVM = 0;
       let globDiasTotalAVM=0;
+      let globPacientesAVM=0;
       let globAVMDiasTaxa=0;
       let globDiasCenso=0;
       let globInternadosDia = 0;
@@ -2363,6 +2388,7 @@
         const item = statsPorSetor[s];
         globDiasAVM += item.diasAVM;
         globDiasTotalAVM += item.diasTotalAVM;
+        globPacientesAVM += item.totalPacientes;
         globAVMDiasTaxa+=item.avmDiasTaxa||0;
         globDiasCenso+=item.diasComCenso||0;
         globInternadosDia+=item.internadosDia||0;
@@ -2383,8 +2409,8 @@
       const globTxNaoProg = globTotExt > 0 ? ((globTotNaoProg / globTotExt) * 100).toFixed(1) : '0.0';
       const globTxSucesso = globTotExt > 0 ? (((globTotExt - globFalhas48h) / globTotExt) * 100).toFixed(1) : '0.0';
       const globTxFalha = globTotExt > 0 ? ((globFalhas48h / globTotExt) * 100).toFixed(1) : '0.0';
-      const globTxTQT = pacFiltrados.length > 0 ? ((globTQT / pacFiltrados.length) * 100).toFixed(1) : '0.0';
-      const globTxObito = pacFiltrados.length > 0 ? ((globObitos / pacFiltrados.length) * 100).toFixed(1) : '0.0';
+      const globTxTQT = globPacientesAVM > 0 ? ((globTQT / globPacientesAVM) * 100).toFixed(1) : '0.0';
+      const globTxObito = globPacientesAVM > 0 ? ((globObitos / globPacientesAVM) * 100).toFixed(1) : '0.0';
 
       document.getElementById('dashTaxaUtilizacao').textContent = globTxUtilizacao==='—'?'—':`${globTxUtilizacao}%`;
       document.getElementById('dashUtilizacaoSub').textContent = globDiasCenso>0?`Base: ${globDiasCenso} dias com censo/estimativa válida • ${globAVMDiasTaxa} AVM-dias / ${globInternadosDia} internados-dias`:'Sem dias com censo válido no período';
@@ -2402,8 +2428,8 @@
       document.getElementById('dashFalhaSub').textContent = `${globFalhas48h} falhas <48h`;
 
       document.getElementById('dashPacientesDia').textContent = `${globDiasAVM} d`;
-      document.getElementById('dashTempoMedioAVM').textContent=pacFiltrados.length?(globDiasAVM/pacFiltrados.length).toFixed(1)+' d':'—';
-      document.getElementById('dashTempoMedioAVMSub').textContent=pacFiltrados.length?`AVM-Dia dividido por ${pacFiltrados.length} pacientes distintos no período`:'Sem pacientes com AVM no período';
+      document.getElementById('dashTempoMedioAVM').textContent=globPacientesAVM?(globDiasAVM/globPacientesAVM).toFixed(1)+' d':'—';
+      document.getElementById('dashTempoMedioAVMSub').textContent=globPacientesAVM?`AVM-Dia dividido por ${globPacientesAVM} pacientes distintos nos setores selecionados`:'Sem pacientes com AVM no período';
       document.getElementById('dashTaxaTQT').textContent = `${globTxTQT}%`;
       document.getElementById('dashTQTSub').textContent = `${globTQT} traqueostomias`;
 
@@ -2811,21 +2837,18 @@
         stats[s].avmDiasTaxa=base.avmDias;
         stats[s].diasComCenso=base.diasComCenso;
       });
-      const pacientesPeriodo=pacientes.filter(p=>contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
+      const pacientesPeriodoBrutos=pacientes.filter(p=>contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
+      const pacientesPeriodo=Array.from(new Map(pacientesPeriodoBrutos.map(p=>[normalizarSetorIndicador(p.setor)+'|'+chavePacienteIndicador(p),p])).values());
 
-      pacientesPeriodo.forEach(p => {
-        const s = stats[p.setor] ? p.setor : SETORES_ATIVOS[0];
-        if (!stats[s]) {
-          stats[s] = { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
-        }
-        stats[s].total++;
-        stats[s].pacientesAVM++;
-        stats[s].diasAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
-        stats[s].diasTotalAVM += contarAVMDiasNoPeriodo(p,dtInicio,dtFim);
-
+      SETORES_ATIVOS.forEach(s=>{
+        const resumo=obterResumoAVMSetor(s,dtInicio,dtFim);
+        stats[s].total=resumo.pacientes;
+        stats[s].pacientesAVM=resumo.pacientes;
+        stats[s].diasAVM=resumo.diasAVM;
+        stats[s].diasTotalAVM=resumo.diasAVM;
       });
       pacientes.forEach(p=>{
-        const s=stats[p.setor]?p.setor:SETORES_ATIVOS[0]; if(!stats[s])return;
+        const s=normalizarSetorIndicador(p.setor); if(!stats[s])return;
         (p.ciclos||[]).forEach(c=>{
           if((dtInicio&&(!c.dataExt||c.dataExt<dtInicio))||(dtFim&&(!c.dataExt||c.dataExt>dtFim)))return;
           stats[s].totExt++;
@@ -2842,7 +2865,7 @@
         if (!p.dataTQT) return;
         if (dtInicio && p.dataTQT < dtInicio) return;
         if (dtFim && p.dataTQT > dtFim) return;
-        const s = stats[p.setor] ? p.setor : SETORES_ATIVOS[0];
+        const s = normalizarSetorIndicador(p.setor);
         if (!stats[s]) return;
         stats[s].tqt++;
         if(p.dataDecanul&&(!dtInicio||p.dataDecanul>=dtInicio)&&(!dtFim||p.dataDecanul<=dtFim)){const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);if(dd!==null){stats[s].diasTQTDecanul+=dd;stats[s].qtdTQTDecanul++;}}
