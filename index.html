@@ -2298,6 +2298,32 @@
       atualizarDashboard();
     }
 
+    function tqtPertenceAoSetor(p) {
+      const tqt=String(p?.dataTQT||'').slice(0,10);
+      const adm=String(p?.dataAdm||'').slice(0,10);
+      if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(tqt))return false;
+      // Cadastros legados sem admissão no setor permanecem utilizáveis.
+      // Nos novos registros, evento anterior à entrada não pertence ao setor.
+      return !/^\\d{4}-\\d{2}-\\d{2}$/.test(adm)||tqt>=adm;
+    }
+    function obterEventosIOTTQTUnicos(listaPacientes,setoresPermitidos,inicio,fim) {
+      const eventos=new Map();
+      (listaPacientes||[]).forEach(p=>{
+        const setor=normalizarSetorIndicador(p.setor);
+        const tqt=String(p.dataTQT||'').slice(0,10);
+        const iot=String(p.dataIOT||'').slice(0,10);
+        if(setoresPermitidos&&!setoresPermitidos.includes(setor))return;
+        if(!tqtPertenceAoSetor(p)||!dataDentroPeriodo(tqt,inicio,fim))return;
+        if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(iot)||iot>tqt)return;
+        const chave=setor+'|'+chavePacienteIndicador(p)+'|'+tqt;
+        const atual=eventos.get(chave);
+        // Se o mesmo procedimento foi replicado em registros de ciclos,
+        // usa a IOT válida mais próxima e anterior à TQT.
+        if(!atual||iot>String(atual.dataIOT).slice(0,10))eventos.set(chave,p);
+      });
+      return [...eventos.values()];
+    }
+
     function diasEntreDatasIOTeTQT(dataIOT, dataTQT) {
       if (!dataIOT || !dataTQT) return null;
       const inicio = new Date(String(dataIOT).slice(0, 10) + 'T00:00:00');
@@ -2430,7 +2456,7 @@
           if(!obitosContadosDash.has(chave)){item.obitos++;obitosContadosDash.add(chave);}
         }
         const chaveEventoTQT=s+'|'+chavePacienteIndicador(p)+'|'+String(p.dataTQT||'').slice(0,10);
-        if(dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)&&!tqtContadasDash.has(chaveEventoTQT)){item.tqt++;tqtContadasDash.add(chaveEventoTQT);}
+        if(tqtPertenceAoSetor(p)&&dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)&&!tqtContadasDash.has(chaveEventoTQT)){item.tqt++;tqtContadasDash.add(chaveEventoTQT);}
         // Decanulação é selecionada pela data da decanulação; a TQT pode ter ocorrido em mês anterior.
         const chaveEventoDec=s+'|'+chavePacienteIndicador(p)+'|'+String(p.dataDecanul||'').slice(0,10);
         if(p.dataTQT&&dataDentroPeriodo(p.dataDecanul,dtInicio,dtFim)&&!decanulContadasDash.has(chaveEventoDec)){
@@ -2441,22 +2467,16 @@
 
       // Tempo IOT–TQT e total de TQT: considerar a data da TQT no período selecionado,
       // independentemente de a IOT ter ocorrido em período anterior.
-      const iottqtContadasDash=new Set();
-      pacientes.forEach(p => {
+      const eventosIOTTQTDash=obterEventosIOTTQTUnicos(pacientes,setoresFiltro,dtInicio,dtFim);
+      eventosIOTTQTDash.forEach(p=>{
         const setorPaciente=normalizarSetorIndicador(p.setor);
-        if (!setoresFiltro.includes(setorPaciente) || !p.dataTQT) return;
-        if (dtInicio && p.dataTQT < dtInicio) return;
-        if (dtFim && p.dataTQT > dtFim) return;
-        const item = statsPorSetor[setorPaciente];
-        const chaveIOTTQT=setorPaciente+'|'+chavePacienteIndicador(p)+'|'+String(p.dataTQT).slice(0,10);
-        if(iottqtContadasDash.has(chaveIOTTQT))return;
-        iottqtContadasDash.add(chaveIOTTQT);
-        const diasIOTTQT = diasEntreDatasIOTeTQT(p.dataIOT, p.dataTQT);
-        if (diasIOTTQT !== null) {
-          item.diasIOTTQT = (item.diasIOTTQT || 0) + diasIOTTQT;
-          item.qtdIOTTQT = (item.qtdIOTTQT || 0) + 1;
+        const item=statsPorSetor[setorPaciente];
+        const diasIOTTQT=diasEntreDatasIOTeTQT(p.dataIOT,p.dataTQT);
+        if(item&&diasIOTTQT!==null){
+          item.diasIOTTQT=(item.diasIOTTQT||0)+diasIOTTQT;
+          item.qtdIOTTQT=(item.qtdIOTTQT||0)+1;
         }
-      });
+      });;
 
       let globDiasAVM = 0;
       let globDiasTotalAVM=0;
@@ -2964,17 +2984,26 @@
         }
       });
 
+      const eventosIOTTQTSetores=obterEventosIOTTQTUnicos(pacientes,SETORES_ATIVOS,dtInicio,dtFim);
+      eventosIOTTQTSetores.forEach(p=>{
+        const s=normalizarSetorIndicador(p.setor);
+        const diasIOTTQT=diasEntreDatasIOTeTQT(p.dataIOT,p.dataTQT);
+        if(stats[s]&&diasIOTTQT!==null){
+          stats[s].diasIOTTQT=(stats[s].diasIOTTQT||0)+diasIOTTQT;
+          stats[s].qtdIOTTQT=(stats[s].qtdIOTTQT||0)+1;
+        }
+      });
+
       // Eventos TQT, IOT–TQT e decanulação são filtrados pela data do próprio evento.
       const tqtContadasDados=new Set(), decanulContadasDados=new Set(), iottqtContadasDados=new Set();
       pacientes.forEach(p => {
         const s=normalizarSetorIndicador(p.setor); if(!stats[s])return;
         const chavePacienteSetor=s+'|'+chavePacienteIndicador(p);
-        if(dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)){
+        if(tqtPertenceAoSetor(p)&&dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)){
           const chaveTQT=chavePacienteSetor+'|'+String(p.dataTQT).slice(0,10);
           if(!tqtContadasDados.has(chaveTQT)){
             stats[s].tqt++;tqtContadasDados.add(chaveTQT);
-            const diasIOTTQT=diasEntreDatasIOTeTQT(p.dataIOT,p.dataTQT);
-            if(diasIOTTQT!==null){stats[s].diasIOTTQT=(stats[s].diasIOTTQT||0)+diasIOTTQT;stats[s].qtdIOTTQT=(stats[s].qtdIOTTQT||0)+1;}
+
           }
         }
         // Não exigir que a TQT também esteja no período: decanulação pode ocorrer meses depois.
