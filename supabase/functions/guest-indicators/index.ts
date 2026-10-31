@@ -179,18 +179,6 @@ Deno.serve(async (req) => {
         }
       }
     }
-    for (const row of patients) {
-      const p = row?.dados || {};
-      const iot = isoDate(p.dataIOT);
-      const outcomeDate = isoDate(p.dataDesfecho);
-      const sector = normalizeSector(p.setor || "NÃO INFORMADO").slice(0, 80) || "NÃO INFORMADO";
-      const s = ensure(sector);
-      const diasNoPeriodo=avmDays(p,startDate,endDate);
-      if(startDate&&iot&&iot> endDate)continue;
-      if(startDate&&outcomeDate&&outcomeDate<startDate&&diasNoPeriodo===0)continue;
-      // Ciclos, pacientes e desfechos são consolidados por paciente/setor abaixo.
-    }
-
     // Consolidar AVM-pacientes, AVM-Dia e eventos TQT sem duplicar ciclos/registros.
     for(const group of patientGroups.values()){
       const s=ensure(group.sector);
@@ -210,7 +198,7 @@ Deno.serve(async (req) => {
       if(outcomeRow){
         const outcome=String(outcomeRow.desfecho||"").toUpperCase();
         const outcomeDate=isoDate(outcomeRow.dataDesfecho);
-        if(outcome==="ÓBITO"&&inside(outcomeDate,startDate,endDate)){s.obitos++;s.desfechos.obitos++;}
+        if(outcome==="ÓBITO"&&patientAVMDays>0&&inside(outcomeDate,startDate,endDate)){s.obitos++;s.desfechos.obitos++;}
         else if(outcome==="ATIVO")s.desfechos.ativos++;
         else if(outcome==="EXTOT SEM FALHA"||outcome==="DECANULADO SEM FALHA")s.desfechos.sucesso++;
         else if(outcome==="TRANSFERÊNCIA"||outcome==="ALTA HOSPITALAR")s.desfechos.transferencia++;
