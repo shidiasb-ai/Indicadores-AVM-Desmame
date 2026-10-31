@@ -237,7 +237,7 @@ Deno.serve(async (req) => {
       a.avmDiasTaxa+=Number(s.avmDiasTaxa)||0;
       a.diasIOTTQT += (Number(s.mediaIOTTQT) || 0) * (Number(s.qtdIOTTQT) || 0);
       return a;
-    }, { total:0,pacientesAVM:0,diasAVM:0,diasTotalAVM:0,internadosDia:0,totExt:0,totRetot:0,falhas48h:0,autoextubacao:0,acidental:0,tqt:0,obitos:0,qtdIOTTQT:0,diasIOTTQT:0 });
+    }, { total:0,pacientesAVM:0,diasAVM:0,diasTotalAVM:0,avmDiasTaxa:0,internadosDia:0,totExt:0,totRetot:0,falhas48h:0,autoextubacao:0,acidental:0,tqt:0,obitos:0,qtdIOTTQT:0,diasIOTTQT:0 });
     total.qtdPacientesAVM=total.pacientesAVM;
     total.mediaAVM=total.pacientesAVM>0?total.diasTotalAVM/total.pacientesAVM:null;
     total.ocupacaoCompleta=sectors.some((s:any)=>s.internadosDia>0);
