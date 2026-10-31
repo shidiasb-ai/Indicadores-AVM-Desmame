@@ -111,14 +111,16 @@ Deno.serve(async (req) => {
     const stats: Record<string, any> = {};
     const daily: Record<string, { data: string; avm: number; internados: number | null }> = {};
     const censoPresente: Record<string, Set<string>> = {};
+    const censoSetorDia: Record<string, Record<string, number>> = {};
     for (let t = new Date(startDate + "T00:00:00Z"); t <= new Date(endDate + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + 1)) {
       const day = t.toISOString().slice(0, 10);
       daily[day] = { data: day, avm: 0, internados: 0 };
       censoPresente[day]=new Set<string>();
+      censoSetorDia[day]={};
     }
     const ensure = (sector: string) => {
       if (!stats[sector]) stats[sector] = {
-        setor: sector, total: 0, pacientesAVM:0, diasAVM: 0, diasTotalAVM:0, internadosDia: 0, ocupacaoCompleta:true,
+        setor: sector, total: 0, pacientesAVM:0, diasAVM: 0, diasTotalAVM:0, avmDiasTaxa:0, internadosDia: 0, ocupacaoCompleta:true,
         totExt: 0, totRetot: 0, falhas48h: 0, programada: 0, autoextubacao: 0, acidental: 0,
         tqt: 0, obitos: 0, diasIOTTQT: 0, qtdIOTTQT: 0,
         desfechos: { ativos: 0, sucesso: 0, transferencia: 0, obitos: 0 },
@@ -134,19 +136,31 @@ Deno.serve(async (req) => {
         const s = ensure(sector);
         const count = Math.max(0, Number(value) || 0);
         s.internadosDia += count;
-        if (daily[date]) { daily[date].internados = (daily[date].internados||0) + count; censoPresente[date].add(sector); }
+        if (daily[date]) { daily[date].internados = (daily[date].internados||0) + count; censoPresente[date].add(sector); censoSetorDia[date][sector]=count; }
       }
     }
     for(const day of Object.keys(daily)){
       let dailyComplete=true;
       for(const sector of Object.keys(stats)){
         if(censoPresente[day]?.has(sector))continue;
-        if(day<"2026-10-29"){stats[sector].internadosDia+=10;daily[day].internados=(daily[day].internados||0)+10;}
+        if(day<"2026-10-29"){stats[sector].internadosDia+=10;daily[day].internados=(daily[day].internados||0)+10;censoSetorDia[day][sector]=10;}
         else{stats[sector].ocupacaoCompleta=false;dailyComplete=false;}
       }
       if(!dailyComplete)daily[day].internados=null;
     }
 
+    for(const day of Object.keys(daily)){
+      for(const sector of Object.keys(stats)){
+        if(censoSetorDia[day]?.[sector]===undefined)continue;
+        stats[sector].avmDiasTaxa=(stats[sector].avmDiasTaxa||0)+patients.filter(row=>{
+          const p=row?.dados||{};
+          if(String(p.setor||"").trim()!==sector)return false;
+          const start=getStartAVM(p),outcome=isoDate(p.dataDesfecho);
+          if(!start||day<start||(String(p.desfecho||"").toUpperCase()!=="ATIVO"&&outcome&&day>outcome))return false;
+          return isAVMOnDay(getEvents(p,start),day);
+        }).length;
+      }
+    }
     for (const row of patients) {
       const p = row?.dados || {};
       const iot = isoDate(p.dataIOT);
@@ -157,7 +171,7 @@ Deno.serve(async (req) => {
       if(diasNoPeriodo>0){
         s.pacientesAVM+=1;
         s.diasAVM+=diasNoPeriodo;
-        s.diasTotalAVM+=totalAVMDuration(p);
+        s.diasTotalAVM+=diasNoPeriodo;
       }
       if(startDate&&iot&&iot> endDate)continue;
       if(startDate&&outcomeDate&&outcomeDate<startDate&&diasNoPeriodo===0)continue;
@@ -206,7 +220,7 @@ Deno.serve(async (req) => {
         totExt: s.totExt, totRetot: s.totRetot, falhas48h: s.falhas48h,
         programada: s.programada, autoextubacao: s.autoextubacao, acidental: s.acidental, tqt: s.tqt, obitos: s.obitos,
         desfechos: s.desfechos,
-        txUtilizacao: s.ocupacaoCompleta && s.internadosDia > 0 ? Math.min(100, s.diasAVM / s.internadosDia * 100) : null,
+        txUtilizacao: s.internadosDia > 0 ? Math.min(100, s.avmDiasTaxa / s.internadosDia * 100) : null,
         txNaoProg: s.totExt > 0 ? nonProgrammed / s.totExt * 100 : 0,
         txSucesso: s.totExt > 0 ? (s.totExt - s.falhas48h) / s.totExt * 100 : 0,
         txFalha: s.totExt > 0 ? s.falhas48h / s.totExt * 100 : 0,
@@ -220,13 +234,14 @@ Deno.serve(async (req) => {
     const total = sectors.reduce((a: any, s: any) => {
       for (const k of ["total","pacientesAVM","diasAVM","internadosDia","totExt","totRetot","falhas48h","autoextubacao","acidental","tqt","obitos","qtdIOTTQT"]) a[k] += Number(s[k]) || 0;
       a.diasTotalAVM+=(Number(s.mediaAVM)||0)*(Number(s.qtdPacientesAVM)||0);
+      a.avmDiasTaxa+=Number(s.avmDiasTaxa)||0;
       a.diasIOTTQT += (Number(s.mediaIOTTQT) || 0) * (Number(s.qtdIOTTQT) || 0);
       return a;
     }, { total:0,pacientesAVM:0,diasAVM:0,diasTotalAVM:0,internadosDia:0,totExt:0,totRetot:0,falhas48h:0,autoextubacao:0,acidental:0,tqt:0,obitos:0,qtdIOTTQT:0,diasIOTTQT:0 });
     total.qtdPacientesAVM=total.pacientesAVM;
     total.mediaAVM=total.pacientesAVM>0?total.diasTotalAVM/total.pacientesAVM:null;
-    total.ocupacaoCompleta=sectors.every((s:any)=>s.ocupacaoCompleta);
-    total.txUtilizacao = total.ocupacaoCompleta && total.internadosDia > 0 ? Math.min(100, total.diasAVM / total.internadosDia * 100) : null;
+    total.ocupacaoCompleta=sectors.some((s:any)=>s.internadosDia>0);
+    total.txUtilizacao = total.internadosDia > 0 ? Math.min(100, total.avmDiasTaxa / total.internadosDia * 100) : null;
     total.txNaoProg = total.totExt > 0 ? (total.autoextubacao + total.acidental) / total.totExt * 100 : 0;
     total.txSucesso = total.totExt > 0 ? (total.totExt - total.falhas48h) / total.totExt * 100 : 0;
     total.txFalha = total.totExt > 0 ? total.falhas48h / total.totExt * 100 : 0;
