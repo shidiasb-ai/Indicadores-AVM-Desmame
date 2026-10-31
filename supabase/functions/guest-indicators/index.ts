@@ -122,10 +122,14 @@ Deno.serve(async (req) => {
     const stats: Record<string, any> = {};
     const daily: Record<string, { data: string; avm: number; internados: number | null }> = {};
     const censoByDay: Record<string, Record<string, number>> = {};
+    const avmPatientsByDay: Record<string, Record<string, Set<string>>> = {};
+    const patientsBySector: Record<string, Set<string>> = {};
+    const deathKeys = new Set<string>();
     for (let t = new Date(startDate + "T00:00:00Z"); t <= new Date(endDate + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + 1)) {
       const day = t.toISOString().slice(0, 10);
       daily[day] = { data: day, avm: 0, internados: null };
       censoByDay[day] = {};
+      avmPatientsByDay[day] = {};
     }
     const ensure = (sector: string) => {
       if (!stats[sector]) stats[sector] = {
@@ -165,8 +169,9 @@ Deno.serve(async (req) => {
     for (const row of patients) {
       const p = { ...(row?.dados || {}), app_id: row.app_id };
       const sector = normalizeSector(p.setor || "NÃO INFORMADO");
-      const key = sector + "|" + patientKey(p);
-      if (!groups.has(key)) groups.set(key, { sector, key, rows: [] });
+      const pk = patientKey(p), admission = isoDate(p.dataAdm);
+      const key = sector + "|" + pk + "|" + admission;
+      if (!groups.has(key)) groups.set(key, { sector, key, patientKey: pk, admission, rows: [] });
       groups.get(key)!.rows.push(p);
     }
 
@@ -182,19 +187,18 @@ Deno.serve(async (req) => {
       for (const day of Object.keys(daily)) {
         if (groupAVMOnDay(timeline, day, outcomeDate, active) && day <= today) {
           groupDays.add(day);
-          daily[day].avm++;
-          if (Object.prototype.hasOwnProperty.call(censoByDay[day], group.sector)) s.avmDiasTaxa++;
+          if (!avmPatientsByDay[day][group.sector]) avmPatientsByDay[day][group.sector] = new Set<string>();
+          avmPatientsByDay[day][group.sector].add(group.patientKey);
         }
       }
       if (groupDays.size) {
-        s.pacientesAVM++;
-        s.total++;
-        s.diasAVM += groupDays.size;
+        if (!patientsBySector[group.sector]) patientsBySector[group.sector] = new Set<string>();
+        patientsBySector[group.sector].add(group.patientKey);
       }
 
       if (outcome === "ÓBITO" && groupDays.size && inside(outcomeDate, startDate, endDate)) {
-        s.obitos++;
-        s.desfechos.obitos++;
+        const deathKey = group.sector + "|" + group.patientKey + "|" + outcomeDate;
+        if (!deathKeys.has(deathKey)) { s.obitos++; s.desfechos.obitos++; deathKeys.add(deathKey); }
       } else if (outcome === "ATIVO") s.desfechos.ativos++;
       else if (outcome === "EXTOT SEM FALHA" || outcome === "DECANULADO SEM FALHA") s.desfechos.sucesso++;
       else if (outcome === "TRANSFERÊNCIA" || outcome === "ALTA HOSPITALAR") s.desfechos.transferencia++;
@@ -263,6 +267,22 @@ Deno.serve(async (req) => {
         const eligibleTQT = [...tqtDates].filter(d => d <= decan).sort().pop() || "";
         const duration = daysBetween(eligibleTQT, decan);
         if (duration !== null && duration >= 0) { s.diasTQTDecanul += duration; s.qtdTQTDecanul++; }
+      }
+    }
+
+    // Reconta os AVM-pacientes e AVM-Dia por paciente/setor/dia,
+    // unindo episódios de admissão sem duplicar dias sobrepostos.
+    for (const [sector, keys] of Object.entries(patientsBySector)) {
+      const s = ensure(sector);
+      s.pacientesAVM = keys.size;
+      s.total = keys.size;
+    }
+    for (const [day, bySector] of Object.entries(avmPatientsByDay)) {
+      for (const [sector, keys] of Object.entries(bySector)) {
+        const s = ensure(sector);
+        s.diasAVM += keys.size;
+        daily[day].avm += keys.size;
+        if (Object.prototype.hasOwnProperty.call(censoByDay[day], sector)) s.avmDiasTaxa += keys.size;
       }
     }
 
