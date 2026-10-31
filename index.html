@@ -740,16 +740,16 @@
               </select>
             </div>
             <div class="form-group">
-              <label>Registro / Prontuário</label>
-              <input type="text" id="cadRegistro" class="form-ctrl" placeholder="Ex: 1197515">
+              <label>Registro / Prontuário *</label>
+              <input type="text" id="cadRegistro" class="form-ctrl" placeholder="Ex: 1197515" required>
             </div>
             <div class="form-group">
               <label>Idade (anos)</label>
               <input type="number" id="cadIdade" class="form-ctrl" min="0" max="120" placeholder="Ex: 69">
             </div>
             <div class="form-group">
-              <label>Data Admissão no Setor</label>
-              <input type="date" id="cadDataAdm" class="form-ctrl">
+              <label>Data Admissão no Setor *</label>
+              <input type="date" id="cadDataAdm" class="form-ctrl" required>
             </div>
             <div class="form-group">
               <label>Data da IOT (Intubação) *</label>
@@ -3666,7 +3666,20 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     function salvarPaciente(e) {
       e.preventDefault();
       const idx = parseInt(document.getElementById('editIndex').value, 10);
-      const dataRonda = document.getElementById('dataRonda').value || '2026-10-27';
+      const dataRonda = document.getElementById('dataRonda').value || obterDataLocalISO();
+      const registroInformado=document.getElementById('cadRegistro').value.trim();
+      const admInformada=document.getElementById('cadDataAdm').value;
+      const iotInformada=document.getElementById('cadDataIOT').value;
+      if(!registroInformado||!admInformada||!iotInformada){
+        alert('Para cadastrar, informe o prontuário, a data de admissão no setor e a data da IOT.');
+        return;
+      }
+      const decanulInformada=document.getElementById('cadDataDecanul').value;
+      const tqtInformada=document.getElementById('cadDataTQT').value;
+      if(decanulInformada&&(!tqtInformada||decanulInformada<tqtInformada)){
+        alert('A data de decanulação precisa ter uma TQT registrada e ser igual ou posterior à data da TQT.');
+        return;
+      }
       const desfechoEscolhido = document.getElementById('cadDesfecho').value;
       const dataDesf = desfechoEscolhido === 'ATIVO' ? '' : document.getElementById('cadDataDesfecho').value;
 
