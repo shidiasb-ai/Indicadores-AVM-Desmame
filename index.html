@@ -2604,7 +2604,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         globDiasIOTExt+=item.diasIOTExt;globQtdIOTExt+=item.qtdIOTExt;globDiasTQTDecanul+=item.diasTQTDecanul;globQtdTQTDecanul+=item.qtdTQTDecanul;
       });
 
-      const globTxUtilizacao = globDiasEsperadosCenso>0&&globDiasCenso===globDiasEsperadosCenso&&globInternadosDia>0 ? ((globAVMDiasTaxa/globInternadosDia)*100).toFixed(1) : '—';
+      const globTxUtilizacao = globDiasCenso>0&&globInternadosDia>0 ? ((globAVMDiasTaxa/globInternadosDia)*100).toFixed(1) : '—';
       const globTotNaoProg = globAutoExt + globAcidExt;
       const globTxNaoProg = globTotExt > 0 ? ((globTotNaoProg / globTotExt) * 100).toFixed(1) : '0.0';
       const globTxSucesso = globExtAvaliaveis > 0 ? ((globExtSucesso / globExtAvaliaveis) * 100).toFixed(1) : '—';
@@ -2613,7 +2613,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       const globTxObito = globPacientesAVM > 0 ? ((globObitos / globPacientesAVM) * 100).toFixed(1) : '0.0';
 
       document.getElementById('dashTaxaUtilizacao').textContent = globTxUtilizacao==='—'?'—':`${globTxUtilizacao}%`;
-      document.getElementById('dashUtilizacaoSub').textContent = globDiasEsperadosCenso>0&&globDiasCenso===globDiasEsperadosCenso?`Censo completo: ${globDiasCenso} dias-setor • ${globAVMDiasTaxa} AVM-dias / ${globInternadosDia} internados-dias`:`Censo incompleto: ${globDiasCenso} de ${globDiasEsperadosCenso} dias-setor registrados. Taxa não calculada.`;
+      document.getElementById('dashUtilizacaoSub').textContent = globDiasCenso===globDiasEsperadosCenso?`Censo completo: ${globDiasCenso} dias-setor • ${globAVMDiasTaxa} AVM-dias / ${globInternadosDia} internados-dias`:`Censo parcial: ${globDiasCenso} de ${globDiasEsperadosCenso} dias-setor. Taxa calculada somente nos dias preenchidos (${globAVMDiasTaxa} AVM-dias / ${globInternadosDia} internados-dias).`;
 
       document.getElementById('dashTaxaNaoProg').textContent = `${globTxNaoProg}%`;
       document.getElementById('dashNaoProgSub').textContent = `${globTotNaoProg} de ${globTotExt} extubações`;
@@ -2679,7 +2679,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       const ctxUtil = document.getElementById('graficoUtilizacaoSetor').getContext('2d');
       const dadosUtil = setores.map(s => {
         const item = stats[s];
-        return item.censoCompleto&&item.internadosDia>0 ? parseFloat(((item.avmDiasTaxa/item.internadosDia)*100).toFixed(1)) : null;
+        return item.diasComCenso>0&&item.internadosDia>0 ? parseFloat(((item.avmDiasTaxa/item.internadosDia)*100).toFixed(1)) : null;
       });
 
       if (chartInst.utilizacao) chartInst.utilizacao.destroy();
@@ -3108,7 +3108,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       SETORES_ATIVOS.forEach(set => {
         const item = stats[set] || { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
         const internadosDia = item.internadosDia;
-        const txUtilizacao = item.censoCompleto&&internadosDia>0 ? ((item.avmDiasTaxa/internadosDia)*100).toFixed(1)+'%' : '—';
+        const txUtilizacao = item.diasComCenso>0&&internadosDia>0 ? ((item.avmDiasTaxa/internadosDia)*100).toFixed(1)+'%'+(item.censoCompleto?'':' (parcial '+item.diasComCenso+'/'+item.diasPeriodo+')') : '—';
 
         const totNaoProg = item.autoextubacao + item.acidental;
         const txNaoProg = item.totExt > 0 ? ((totNaoProg / item.totExt) * 100).toFixed(1) + '%' : '0.0%';
