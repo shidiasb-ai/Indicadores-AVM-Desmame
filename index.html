@@ -2024,7 +2024,12 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       const container = document.getElementById('setoresCensoContainer');
       if (!container) return;
       const dataRonda = document.getElementById('dataRonda').value || obterDataLocalISO();
-      const ativos = pacientes.filter(p => p.desfecho === 'ATIVO').sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR',{sensitivity:'base'}));
+      // Consolida registros do mesmo paciente no mesmo setor e episódio para
+      // evitar linhas repetidas no Censo, preservando os registros originais no banco.
+      const ativos = consolidarPacientesPorSetor(
+        pacientes.filter(p => p.desfecho === 'ATIVO')
+      ).filter(p => p.desfecho === 'ATIVO')
+       .sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR',{sensitivity:'base'}));
 
       const setoresExibidos = [...SETORES_ATIVOS];
       ativos.forEach(p => {
@@ -2044,7 +2049,8 @@ function obterResumoAVMSetor(setor,inicio,fim) {
           ? censoInternados[dataRonda][setor]
           : '';
         const linhas = pacientesSetor.map(p => {
-          const realIdx = pacientes.indexOf(p);
+          const registroPrincipal = p._registrosOriginais?.[0] || p;
+          const realIdx = pacientes.indexOf(registroPrincipal);
           const statusNaData = (p.historico && p.historico[dataRonda]) ? p.historico[dataRonda] : (p.statusHoje || 'AVM');
           const badgeClass = statusNaData === 'AVM' ? 'b-avm' : (statusNaData === 'RE' ? 'b-re' : 'b-desc');
           const diasAVM = atualizarDiasAVMDoPaciente(p);
