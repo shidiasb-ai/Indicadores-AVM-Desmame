@@ -3111,7 +3111,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       SETORES_ATIVOS.forEach(set => {
         const item = stats[set] || { total: 0, diasAVM: 0, totExt: 0, totRetot: 0, falhas48h: 0, autoextubacao: 0, acidental: 0, tqt: 0, obitos: 0 };
         const internadosDia = item.internadosDia;
-        const txUtilizacao = item.diasComCenso>0&&internadosDia>0 ? ((item.avmDiasTaxa/internadosDia)*100).toFixed(1)+'%'+(item.censoCompleto?'':' (parcial '+item.diasComCenso+'/'+item.diasPeriodo+')') : '—';
+        const txUtilizacao = item.diasComCenso>0&&internadosDia>0 ? ((item.avmDiasTaxa/internadosDia)*100).toFixed(1)+'%' : '—';
 
         const totNaoProg = item.autoextubacao + item.acidental;
         const txNaoProg = item.totExt > 0 ? ((totNaoProg / item.totExt) * 100).toFixed(1) + '%' : '0.0%';
