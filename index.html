@@ -1512,7 +1512,10 @@
       const nome=String(p?.nome||'').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ');
       return nome?'N:'+nome:'SEM-ID:'+String(p?.id||'');
     }
-        function consolidarPacientesPorSetor(lista=pacientes) {
+        function chaveEpisodioIndicador(p) {
+      return chavePacienteIndicador(p)+'|'+String(p?.dataAdm||'').slice(0,10);
+    }
+    function consolidarPacientesPorSetor(lista=pacientes) {
       const grupos=new Map();
       (lista||[]).forEach(p=>{
         const setor=normalizarSetorIndicador(p.setor),adm=String(p.dataAdm||'').slice(0,10);
@@ -1552,7 +1555,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       if(!inicio||!fim||fim<inicio)return {pacientes:0,diasAVM:0};
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
         const dia=d.toISOString().slice(0,10),doDia=new Set();
-        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chavePacienteIndicador(p));});
+        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chaveEpisodioIndicador(p));});
         doDia.forEach(k=>distintos.add(k));diasAVM+=doDia.size;
       }
       return {pacientes:distintos.size,diasAVM};
@@ -1569,7 +1572,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         if(ocupacao===null)continue;
         base.diasComCenso++;base.internadosDia+=ocupacao;
         const doDia=new Set();
-        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chavePacienteIndicador(p));});
+        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chaveEpisodioIndicador(p));});
         base.avmDias+=doDia.size;
       }
       base.completo=base.diasPeriodo>0&&base.diasComCenso===base.diasPeriodo;
