@@ -771,6 +771,7 @@
                 <option value="TRANSFERÊNCIA">TRANSFERÊNCIA (Leito Liberado)</option>
                 <option value="ÓBITO">ÓBITO (Leito Liberado)</option>
                 <option value="EXTOT SEM FALHA">EXTOT SEM FALHA (Alta da VM)</option>
+                <option value="DECANULADO">DECANULADO</option>
                 <option value="DECANULADO SEM FALHA">DECANULADO SEM FALHA</option>
               </select>
             </div>
@@ -1165,7 +1166,8 @@
           <option value="TRANSFERÊNCIA">TRANSFERÊNCIA</option>
           <option value="ÓBITO">ÓBITO</option>
           <option value="EXTOT SEM FALHA">EXTOT SEM FALHA (Alta da VM)</option>
-          <option value="DECANULADO SEM FALHA">DECANULADO SEM FALHA</option>
+          <option value="DECANULADO">DECANULADO</option>
+                <option value="DECANULADO SEM FALHA">DECANULADO SEM FALHA</option>
         </select>
       </div>
 
@@ -1217,8 +1219,8 @@
       "UTI GERAL": 10,
       "CARDIO": 10,
       "UTI CIR A": 10,
-      "UTI CIR B": 16,
-      "VERMELHA": 12
+      "UTI CIR B": 10,
+      "VERMELHA": 0
     };
     let TIPOS_SETORES = {
       "UTI GERAL": "UTI Adulto",
@@ -3228,15 +3230,17 @@ function obterResumoAVMSetor(setor,inicio,fim) {
 
       SETORES_ATIVOS.forEach(set => {
         const pacAtivos = pacientes.filter(p => normalizarSetorIndicador(p.setor) === normalizarSetorIndicador(set) && p.desfecho === 'ATIVO').length;
-        const cap = CAPACIDADE_SETORES[set] || 10;
+        const cap = CAPACIDADE_SETORES[set] ?? 10;
         const tipo = TIPOS_SETORES[set] || 'UTI Adulto';
+        const capacidadeLabel = cap === 0 ? 'Porta aberta' : `${cap} leitos`;
+        const ocupacaoLabel = cap === 0 ? `${pacAtivos} paciente(s) acompanhado(s)` : `${pacAtivos} / ${cap} ocupados`;
 
         tbody.innerHTML += `
           <tr>
             <td><strong>${set}</strong></td>
-            <td><strong style="color:var(--primary);">${cap} leitos</strong></td>
+            <td><strong style="color:var(--primary);">${capacidadeLabel}</strong></td>
             <td><span class="badge b-info">${tipo}</span></td>
-            <td><strong>${pacAtivos}</strong> / ${cap} ocupados</td>
+            <td><strong>${ocupacaoLabel}</strong></td>
             <td>
               <div style="display: flex; gap: 4px;">
                 <button class="btn" style="padding: 3px 6px;" onclick="editarUnidade('${set}')">✏️</button>
@@ -3657,7 +3661,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     function editarUnidade(set) {
       document.getElementById('editUnidadeNomeAntigo').value = set;
       document.getElementById('cadUnidadeNome').value = set;
-      document.getElementById('cadUnidadeCapacidade').value = CAPACIDADE_SETORES[set] || 10;
+      document.getElementById('cadUnidadeCapacidade').value = CAPACIDADE_SETORES[set] ?? 10;
       document.getElementById('cadUnidadeTipo').value = TIPOS_SETORES[set] || 'UTI Adulto';
       document.getElementById('btnSalvarUnidade').textContent = 'Atualizar Unidade';
     }
