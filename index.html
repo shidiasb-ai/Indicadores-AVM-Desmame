@@ -3807,10 +3807,28 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       document.getElementById('aba-admissao').classList.add('active');
     }
 
-    function excluirRegistro(idx) {
-      if (confirm(`Excluir permanentemente o prontuário de ${pacientes[idx].nome}?`)) {
+    async function excluirRegistro(idx) {
+      const paciente = pacientes[idx];
+      if (!paciente) return;
+      if (!confirm(`Excluir permanentemente o prontuário de ${paciente.nome}?`)) return;
+      if (!usuarioLogado || usuarioLogado.perfil === 'convidado') {
+        alert('Seu perfil não tem permissão para excluir prontuários.');
+        return;
+      }
+      try {
+        // A exclusão precisa ocorrer no banco. salvarStorage() usa upsert e
+        // não remove linhas que saíram do array local.
+        const { error } = await supabaseClient
+          .from('pacientes')
+          .delete()
+          .eq('app_id', String(paciente.id));
+        if (error) throw error;
         pacientes.splice(idx, 1);
-        salvarStorage();
+        renderizarTudo();
+      } catch (err) {
+        console.error('Erro ao excluir prontuário no Supabase:', err);
+        alert('Não foi possível excluir o prontuário no banco. Nenhum registro foi removido da tela. Verifique a permissão de exclusão.');
+        await carregarDadosRemotos();
         renderizarTudo();
       }
     }
