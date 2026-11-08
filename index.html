@@ -1345,13 +1345,14 @@
 
     // Busca todas as linhas sem depender do limite padrão de 1.000 registros do Supabase.
     // A leitura é paginada para suportar dezenas de milhares de pacientes sem truncar o resultado.
-    async function buscarTodasAsLinhas(nomeTabela, colunas, tamanhoPagina = 1000) {
+    async function buscarTodasAsLinhas(nomeTabela, colunas, tamanhoPagina = 1000, colunaOrdenacao = 'id') {
       const todas = [];
       for (let inicio = 0; ; inicio += tamanhoPagina) {
         const fim = inicio + tamanhoPagina - 1;
         const { data, error } = await supabaseClient
           .from(nomeTabela)
           .select(colunas)
+          .order(colunaOrdenacao, { ascending: true })
           .range(inicio, fim);
         if (error) {
           console.error(`Falha ao carregar ${nomeTabela} (linhas ${inicio}-${fim}):`, error);
@@ -1371,7 +1372,7 @@
         pacientes = data.map(row => ({ ...(row.dados || {}), id: row.app_id }));
         pacientes.forEach(p => { if (!p.ciclos) p.ciclos = []; });
 
-        const rondas = await buscarTodasAsLinhas('censo_rondas', 'data_ronda,dados');
+        const rondas = await buscarTodasAsLinhas('censo_rondas', 'data_ronda,dados', 1000, 'data_ronda');
         censoInternados = {};
         rondas.forEach(r => { censoInternados[r.data_ronda] = r.dados || {}; });
       } catch (error) {
