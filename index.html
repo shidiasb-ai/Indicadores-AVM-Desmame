@@ -1515,7 +1515,7 @@
         function chaveEpisodioIndicador(p) {
       const adm=String(p?.dataAdm||'').slice(0,10);
       const iot=String(p?.dataIOT||'').slice(0,10);
-      return chavePacienteIndicador(p)+'|'+adm+'|'+(/^\\d{4}-\\d{2}-\\d{2}$/.test(iot)?iot:'IOT-NAO-INFORMADA');
+      return chavePacienteIndicador(p)+'|'+adm+'|'+(/^\d{4}-\d{2}-\d{2}$/.test(iot)?iot:'IOT-NAO-INFORMADA');
     }
     function consolidarPacientesPorSetor(lista=pacientes) {
       const grupos=new Map();
@@ -1524,7 +1524,7 @@
         const iot=String(p.dataIOT||'').slice(0,10);
         // Uma nova IOT no mesmo setor/admissão caracteriza novo episódio.
         // Registros duplicados do mesmo episódio (mesma IOT) continuam agrupados.
-        const chave=setor+'|'+chavePacienteIndicador(p)+'|'+adm+'|'+( /^\\d{4}-\\d{2}-\\d{2}$/.test(iot) ? iot : 'IOT-NAO-INFORMADA');
+        const chave=setor+'|'+chavePacienteIndicador(p)+'|'+adm+'|'+( /^\d{4}-\d{2}-\d{2}$/.test(iot) ? iot : 'IOT-NAO-INFORMADA');
         if(!grupos.has(chave))grupos.set(chave,{setor,rows:[]});
         grupos.get(chave).rows.push(p);
       });
