@@ -1555,10 +1555,9 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       if(!inicio||!fim||fim<inicio)return {pacientes:0,diasAVM:0};
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
         const dia=d.toISOString().slice(0,10),doDia=new Set();
-        // A unidade de contagem é o paciente, não o registro/episódio.
-        // Se houver mais de um cadastro do mesmo prontuário no mesmo setor,
-        // ele deve contribuir uma única vez para o AVM-Dia daquela data.
-        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chavePacienteIndicador(p));});
+        // Conta episódios por setor: transferências e novas admissões não devem
+        // ser fundidas apenas porque pertencem ao mesmo prontuário.
+        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chaveEpisodioIndicador(p));});
         doDia.forEach(k=>distintos.add(k));diasAVM+=doDia.size;
       }
       return {pacientes:distintos.size,diasAVM};
@@ -1575,8 +1574,8 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         if(ocupacao===null)continue;
         base.diasComCenso++;base.internadosDia+=ocupacao;
         const doDia=new Set();
-        // Mantém a mesma chave de paciente usada na consolidação estratificada.
-        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chavePacienteIndicador(p));});
+        // A taxa usa a mesma unidade de análise (episódio por setor) do AVM-Dia.
+        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chaveEpisodioIndicador(p));});
         base.avmDias+=doDia.size;
       }
       base.completo=base.diasPeriodo>0&&base.diasComCenso===base.diasPeriodo;
