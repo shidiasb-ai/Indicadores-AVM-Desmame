@@ -3057,10 +3057,18 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         stats[s].diasPeriodo=base.diasPeriodo;
         stats[s].censoCompleto=base.completo;
       });
+      // A coluna "Pacientes em AVM" deve usar exatamente a mesma população
+      // exibida em "Todos os Registros" para o setor e período selecionados.
+      // Cada linha/cadastro é preservado: transferências e novas IOTs podem
+      // gerar registros distintos para o mesmo paciente.
       SETORES_ATIVOS.forEach(s=>{
+        const registrosDoSetorPeriodo=pacientes.filter(p=>
+          normalizarSetorIndicador(p.setor)===normalizarSetorIndicador(s) &&
+          registroDentroDoPeriodoGeral(p,dtInicio,dtFim)
+        );
         const resumo=obterResumoAVMSetor(s,dtInicio,dtFim);
-        stats[s].total=resumo.pacientes;
-        stats[s].pacientesAVM=resumo.pacientes;
+        stats[s].total=registrosDoSetorPeriodo.length;
+        stats[s].pacientesAVM=registrosDoSetorPeriodo.length;
         stats[s].diasAVM=resumo.diasAVM;
         stats[s].diasTotalAVM=resumo.diasAVM;
       });
