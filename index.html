@@ -689,9 +689,10 @@
             <thead>
               <tr>
                 <th>Setor / Unidade</th>
-                <th title="Número de pacientes distintos com pelo menos um dia de AVM no período e setor selecionados">Pacientes em AVM</th>
+                <th title="Quantidade de cadastros que aparecem em Todos os Registros com o mesmo filtro de período e setor">Registros no período</th>
+                <th title="Episódios distintos com pelo menos um dia de AVM no período e setor selecionados">Episódios com AVM</th>
                 <th title="Soma dos dias em ventilação mecânica invasiva dentro do período selecionado">AVM-Dia</th>
-                <th title="Média setorial: AVM-Dia do período dividido pelo número de pacientes distintos com AVM no setor">Tempo médio de AVM no setor (dias/paciente)</th>
+                <th title="AVM-Dia dividido pelo número de episódios distintos com AVM no período">Tempo médio de AVM por episódio (dias)</th>
                 <th>Tx. Utilização AVM</th>
                 <th>Total Extubações</th>
                 <th>Total RETOTs</th>
@@ -1436,8 +1437,9 @@
       const adm=String(p.dataAdm||'').slice(0,10);
       const iot=String(p.dataIOT||'').slice(0,10);
       const valid=d=>/^\d{4}-\d{2}-\d{2}$/.test(d);
-      if(!valid(adm))return '';
-      return valid(iot)&&iot>adm?iot:adm;
+      // Sem data de IOT não há evidência suficiente para iniciar contagem de AVM.
+      if(!valid(adm)||!valid(iot))return '';
+      return iot>adm?iot:adm;
     }
     function obterEventosAVM(p,inicio) {
       const ev=[{data:inicio,avm:true,ordem:0}];
@@ -1636,7 +1638,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       document.getElementById('dashFalhaSub').textContent = `${t.falhas48h || 0} falhas <48h`;
       document.getElementById('dashPacientesDia').textContent = `${t.diasAVM || 0} d`;
       document.getElementById('dashTempoMedioAVM').textContent=t.mediaAVM==null?'—':`${Number(t.mediaAVM).toFixed(1)} d`;
-      document.getElementById('dashTempoMedioAVMSub').textContent=t.qtdPacientesAVM>0?`Média de ${t.qtdPacientesAVM} pacientes distintos com AVM no período`:'Sem pacientes com AVM no período';
+      document.getElementById('dashTempoMedioAVMSub').textContent=t.qtdPacientesAVM>0?`Média de ${t.qtdPacientesAVM} episódios com AVM no período`:'Sem pacientes com AVM no período';
       document.getElementById('dashTaxaTQT').textContent = formatarPercentualAgregado(t.txTQT);
       document.getElementById('dashTQTSub').textContent = `${t.tqt || 0} traqueostomias`;
       document.getElementById('dashTempoIOTTQT').textContent = t.mediaIOTTQT == null ? '—' : `${Number(t.mediaIOTTQT).toFixed(1)} d`;
@@ -2363,14 +2365,14 @@ function obterResumoAVMSetor(setor,inicio,fim) {
 
     function tqtPertenceAoSetor(p) {
       const tqt=String(p?.dataTQT||'').slice(0,10);
-      const adm=String(p?.dataAdm||'').slice(0,10);
-      return /^\d{4}-\d{2}-\d{2}$/.test(tqt)&&/^\d{4}-\d{2}-\d{2}$/.test(adm)&&tqt>=adm;
+      const inicio=obterInicioAVMNoSetor(p);
+      return /^\d{4}-\d{2}-\d{2}$/.test(tqt)&&!!inicio&&tqt>=inicio;
     }
     function dataDoEventoPertenceAoSetor(p,dataEvento) {
       const evento=String(dataEvento||'').slice(0,10);
-      const adm=String(p?.dataAdm||'').slice(0,10);
-      if(!/^\d{4}-\d{2}-\d{2}$/.test(evento)||!/^\d{4}-\d{2}-\d{2}$/.test(adm))return false;
-      return evento>=adm;
+      const inicio=obterInicioAVMNoSetor(p);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(evento)||!inicio)return false;
+      return evento>=inicio;
     }
     function obterEventosIOTTQTUnicos(listaPacientes,setoresPermitidos,inicio,fim) {
       const eventos=new Map();
@@ -2384,7 +2386,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         if(!/^\d{4}-\d{2}-\d{2}$/.test(iot)||iot>tqt)return;
         const inicioEpisodio=iot>adm?iot:adm;
         if(inicioEpisodio>tqt)return;
-        const chave=setor+'|'+chavePacienteIndicador(p)+'|'+tqt;
+        const chave=setor+'|'+chaveEpisodioIndicador(p)+'|'+tqt;
         const atual=eventos.get(chave);
         if(!atual||inicioEpisodio>String(atual.dataIOT).slice(0,10))eventos.set(chave,{...p,dataIOT:inicioEpisodio});
       });
@@ -2434,13 +2436,20 @@ function obterResumoAVMSetor(setor,inicio,fim) {
           if(c.teveRetot&&dataRetot&&/^\d{4}-\d{2}-\d{2}$/.test(dataRetot)){
             const gap=diasEntreDatasIOTeTQT(dataExt,dataRetot);
             if(gap!==null&&gap>=0){
-              resultado.avaliaveis++;
-              const falha=typeof c.falha48h==='boolean'?c.falha48h:gap<=1;
-              if(falha)resultado.falhas48h++;else resultado.sucessos++;
+              // Com datas sem horário, diferença de 2 dias não comprova 48h.
+              if(typeof c.falha48h==='boolean'){
+                resultado.avaliaveis++;
+                if(c.falha48h)resultado.falhas48h++;else resultado.sucessos++;
+              } else if(gap<=1){
+                resultado.avaliaveis++;resultado.falhas48h++;
+              } else if(gap>=3){
+                resultado.avaliaveis++;resultado.sucessos++;
+              } else resultado.pendentes++;
             } else resultado.pendentes++;
           } else {
             const acompanhamento=diasEntreDatasIOTeTQT(dataExt,hoje);
-            if(acompanhamento!==null&&acompanhamento>=2){resultado.avaliaveis++;resultado.sucessos++;}
+            // Sem RETOT, só classifica sucesso após 3 datas-calendário completas.
+            if(acompanhamento!==null&&acompanhamento>=3){resultado.avaliaveis++;resultado.sucessos++;}
             else resultado.pendentes++;
           }
           const inicioEpisodio=obterInicioEpisodioExtubacao(p,ciclos,i);
@@ -2499,7 +2508,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       const gruposFiltrados = consolidarPacientesPorSetor().filter(p => setoresFiltro.includes(normalizarSetorIndicador(p.setor)) && contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
       const mapaPacientesFiltrados = new Map();
       gruposFiltrados.forEach(p=>{
-        const k=normalizarSetorIndicador(p.setor)+'|'+chavePacienteIndicador(p)+'|'+String(p.dataAdm||'').slice(0,10);
+        const k=normalizarSetorIndicador(p.setor)+'|'+chaveEpisodioIndicador(p);
         if(!mapaPacientesFiltrados.has(k))mapaPacientesFiltrados.set(k,p);
       });
       const pacFiltrados=[...mapaPacientesFiltrados.values()];
@@ -2547,13 +2556,13 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         item.naoProgNotificadas+=ev.notificadas;item.diasIOTExt+=ev.diasIOTExt;item.qtdIOTExt+=ev.qtdIOTExt;
         item.extAvaliaveis+=ev.avaliaveis;item.extSucesso+=ev.sucessos;
         if(p.desfecho==='ÓBITO'&&contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
-          const chave=s+'|'+chavePacienteIndicador(p);
+          const chave=s+'|'+chaveEpisodioIndicador(p);
           if(!obitosContadosDash.has(chave)){item.obitos++;obitosContadosDash.add(chave);}
         }
-        const chaveEventoTQT=s+'|'+chavePacienteIndicador(p)+'|'+String(p.dataTQT||'').slice(0,10);
+        const chaveEventoTQT=s+'|'+chaveEpisodioIndicador(p)+'|'+String(p.dataTQT||'').slice(0,10);
         if(tqtPertenceAoSetor(p)&&dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)&&!tqtContadasDash.has(chaveEventoTQT)){item.tqt++;tqtContadasDash.add(chaveEventoTQT);}
         // Decanulação é selecionada pela data da decanulação; a TQT pode ter ocorrido em mês anterior.
-        const chaveEventoDec=s+'|'+chavePacienteIndicador(p)+'|'+String(p.dataDecanul||'').slice(0,10);
+        const chaveEventoDec=s+'|'+chaveEpisodioIndicador(p)+'|'+String(p.dataDecanul||'').slice(0,10);
         if(p.dataTQT&&dataDentroPeriodo(p.dataDecanul,dtInicio,dtFim)&&dataDoEventoPertenceAoSetor(p,p.dataDecanul)&&!decanulContadasDash.has(chaveEventoDec)){
           const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);
           if(dd!==null&&dd>=0){item.diasTQTDecanul+=dd;item.qtdTQTDecanul++;decanulContadasDash.add(chaveEventoDec);}
@@ -2640,7 +2649,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
 
       document.getElementById('dashPacientesDia').textContent = `${globDiasAVM} d`;
       document.getElementById('dashTempoMedioAVM').textContent=globPacientesAVM?(globDiasAVM/globPacientesAVM).toFixed(1)+' d':'—';
-      document.getElementById('dashTempoMedioAVMSub').textContent=globPacientesAVM?`AVM-Dia dividido por ${globPacientesAVM} pacientes distintos nos setores selecionados`:'Sem pacientes com AVM no período';
+      document.getElementById('dashTempoMedioAVMSub').textContent=globPacientesAVM?`AVM-Dia dividido por ${globPacientesAVM} episódios com AVM nos setores selecionados`:'Sem pacientes com AVM no período';
       document.getElementById('dashTaxaTQT').textContent = `${globTxTQT}%`;
       document.getElementById('dashTQTSub').textContent = `${globTQT} TQTs / ${globPacientesAVM} pacientes com AVM no período`;
 
@@ -2908,7 +2917,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         pacientesAgrupadosEvolucao.forEach(p=>{
           const setor=normalizarSetorIndicador(p.setor);
           if(setores.includes(setor)&&pacienteEmAVMNaData(p,dia))
-            distintos.add(setor+'|'+chavePacienteIndicador(p));
+            distintos.add(setor+'|'+chaveEpisodioIndicador(p));
         });
         return distintos.size;
       });
@@ -3068,7 +3077,9 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         );
         const resumo=obterResumoAVMSetor(s,dtInicio,dtFim);
         stats[s].total=registrosDoSetorPeriodo.length;
-        stats[s].pacientesAVM=registrosDoSetorPeriodo.length;
+        stats[s].registrosPeriodo=registrosDoSetorPeriodo.length;
+        stats[s].pacientesAVM=resumo.pacientes;
+        stats[s].episodiosAVM=resumo.pacientes;
         stats[s].diasAVM=resumo.diasAVM;
         stats[s].diasTotalAVM=resumo.diasAVM;
       });
@@ -3081,7 +3092,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         stats[s].autoextubacao+=ev.auto;stats[s].acidental+=ev.acidental;stats[s].naoProgNotificadas+=ev.notificadas;
         stats[s].diasIOTExt+=ev.diasIOTExt;stats[s].qtdIOTExt+=ev.qtdIOTExt;
         if(p.desfecho==='ÓBITO'&&contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
-          const chave=s+'|'+chavePacienteIndicador(p);
+          const chave=s+'|'+chaveEpisodioIndicador(p);
           if(!obitosContadosDados.has(chave)){stats[s].obitos++;obitosContadosDados.add(chave);}
         }
       });
@@ -3100,7 +3111,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       const tqtContadasDados=new Set(), decanulContadasDados=new Set(), iottqtContadasDados=new Set();
       consolidarPacientesPorSetor().forEach(p => {
         const s=normalizarSetorIndicador(p.setor); if(!stats[s])return;
-        const chavePacienteSetor=s+'|'+chavePacienteIndicador(p);
+        const chavePacienteSetor=s+'|'+chaveEpisodioIndicador(p);
         if(tqtPertenceAoSetor(p)&&dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)){
           const chaveTQT=chavePacienteSetor+'|'+String(p.dataTQT).slice(0,10);
           if(!tqtContadasDados.has(chaveTQT)){
@@ -3139,7 +3150,8 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         tbody.innerHTML += `
           <tr>
             <td><strong>${set}</strong></td>
-            <td>${item.pacientesAVM}</td>
+            <td>${item.registrosPeriodo || 0}</td>
+            <td>${item.pacientesAVM || 0}</td>
             <td>${item.diasAVM} d</td>
             <td><strong>${item.pacientesAVM>0?(item.diasAVM/item.pacientesAVM).toFixed(1)+' d':'—'}</strong></td>
             <td><strong style="color: var(--primary);">${txUtilizacao}</strong></td>
