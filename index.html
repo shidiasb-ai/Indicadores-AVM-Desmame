@@ -1685,7 +1685,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         const mediaTQTDecanul = item.mediaTQTDecanul == null ? '—' : `${Number(item.mediaTQTDecanul).toFixed(1)} d`;
         tbody.innerHTML += `<tr>
           <td><strong>${escaparHtml(item.setor)}</strong></td>
-          <td>${item.pacientesAVM || 0}</td><td>${item.diasAVM || 0} d</td><td><strong>${item.mediaAVM==null?'—':Number(item.mediaAVM).toFixed(1)+' d'}</strong></td>
+          <td>${item.registrosPeriodo ?? item.total ?? 0}</td><td>${item.pacientesAVM || 0}</td><td>${item.diasAVM || 0} d</td><td><strong>${item.mediaAVM==null?'—':Number(item.mediaAVM).toFixed(1)+' d'}</strong></td>
           <td><strong>${formatarPercentualAgregado(item.txUtilizacao)}</strong></td>
           <td>${item.totExt || 0}</td><td>${item.totRetot || 0}</td><td>${item.falhas48h || 0}</td>
           <td>${formatarPercentualAgregado(item.txSucesso)}</td><td>${item.autoextubacao || 0}</td><td>${item.acidental || 0}</td>
