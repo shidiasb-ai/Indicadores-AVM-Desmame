@@ -1555,7 +1555,10 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       if(!inicio||!fim||fim<inicio)return {pacientes:0,diasAVM:0};
       for(let d=new Date(inicio+'T00:00:00Z');d<=new Date(fim+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+1)){
         const dia=d.toISOString().slice(0,10),doDia=new Set();
-        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chaveEpisodioIndicador(p));});
+        // A unidade de contagem é o paciente, não o registro/episódio.
+        // Se houver mais de um cadastro do mesmo prontuário no mesmo setor,
+        // ele deve contribuir uma única vez para o AVM-Dia daquela data.
+        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chavePacienteIndicador(p));});
         doDia.forEach(k=>distintos.add(k));diasAVM+=doDia.size;
       }
       return {pacientes:distintos.size,diasAVM};
@@ -1572,7 +1575,8 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         if(ocupacao===null)continue;
         base.diasComCenso++;base.internadosDia+=ocupacao;
         const doDia=new Set();
-        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chaveEpisodioIndicador(p));});
+        // Mantém a mesma chave de paciente usada na consolidação estratificada.
+        pacientesSetor.forEach(p=>{if(pacienteEmAVMNaData(p,dia))doDia.add(chavePacienteIndicador(p));});
         base.avmDias+=doDia.size;
       }
       base.completo=base.diasPeriodo>0&&base.diasComCenso===base.diasPeriodo;
@@ -3049,9 +3053,6 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         stats[s].diasPeriodo=base.diasPeriodo;
         stats[s].censoCompleto=base.completo;
       });
-      const pacientesPeriodoBrutos=pacientes.filter(p=>contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0);
-      const pacientesPeriodo=Array.from(new Map(pacientesPeriodoBrutos.map(p=>[normalizarSetorIndicador(p.setor)+'|'+chavePacienteIndicador(p),p])).values());
-
       SETORES_ATIVOS.forEach(s=>{
         const resumo=obterResumoAVMSetor(s,dtInicio,dtFim);
         stats[s].total=resumo.pacientes;
