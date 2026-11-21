@@ -2376,19 +2376,25 @@ function obterResumoAVMSetor(setor,inicio,fim) {
     }
     function obterEventosIOTTQTUnicos(listaPacientes,setoresPermitidos,inicio,fim) {
       const eventos=new Map();
-      (listaPacientes||[]).forEach(p=>{
+      const episodios=consolidarPacientesPorSetor(listaPacientes||pacientes);
+      episodios.forEach(p=>{
         const setor=normalizarSetorIndicador(p.setor);
-        const tqt=String(p.dataTQT||'').slice(0,10);
-        const iot=String(p.dataIOT||'').slice(0,10);
-        const adm=String(p.dataAdm||'').slice(0,10);
         if(setoresPermitidos&&!setoresPermitidos.includes(setor))return;
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(adm)||!tqtPertenceAoSetor(p)||!dataDentroPeriodo(tqt,inicio,fim))return;
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(iot)||iot>tqt)return;
-        const inicioEpisodio=iot>adm?iot:adm;
-        if(inicioEpisodio>tqt)return;
-        const chave=setor+'|'+chaveEpisodioIndicador(p)+'|'+tqt;
-        const atual=eventos.get(chave);
-        if(!atual||inicioEpisodio>String(atual.dataIOT).slice(0,10))eventos.set(chave,{...p,dataIOT:inicioEpisodio});
+        const inicioAVM=obterInicioAVMNoSetor(p);
+        if(!inicioAVM)return;
+        const tqts=(p._eventosTQT||[p.dataTQT]).map(d=>String(d||'').slice(0,10))
+          .filter((d,i,a)=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&a.indexOf(d)===i&&d>=inicioAVM&&dataDentroPeriodo(d,inicio,fim));
+        const rows=p._registrosOriginais||[p];
+        tqts.forEach(tqt=>{
+          const iots=rows.map(r=>String(r.dataIOT||'').slice(0,10))
+            .filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&d<=tqt)
+            .map(d=>d>String(p.dataAdm||'').slice(0,10)?d:String(p.dataAdm||'').slice(0,10))
+            .filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&d<=tqt).sort();
+          const iot=iots[iots.length-1]||'';
+          if(!iot)return;
+          const chave=setor+'|'+chaveEpisodioIndicador(p)+'|'+tqt;
+          if(!eventos.has(chave))eventos.set(chave,{...p,dataIOT:iot,dataTQT:tqt});
+        });
       });
       return [...eventos.values()];
     }
@@ -2559,14 +2565,23 @@ function obterResumoAVMSetor(setor,inicio,fim) {
           const chave=s+'|'+chaveEpisodioIndicador(p);
           if(!obitosContadosDash.has(chave)){item.obitos++;obitosContadosDash.add(chave);}
         }
-        const chaveEventoTQT=s+'|'+chaveEpisodioIndicador(p)+'|'+String(p.dataTQT||'').slice(0,10);
-        if(tqtPertenceAoSetor(p)&&dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)&&!tqtContadasDash.has(chaveEventoTQT)){item.tqt++;tqtContadasDash.add(chaveEventoTQT);}
-        // Decanulação é selecionada pela data da decanulação; a TQT pode ter ocorrido em mês anterior.
-        const chaveEventoDec=s+'|'+chaveEpisodioIndicador(p)+'|'+String(p.dataDecanul||'').slice(0,10);
-        if(p.dataTQT&&dataDentroPeriodo(p.dataDecanul,dtInicio,dtFim)&&dataDoEventoPertenceAoSetor(p,p.dataDecanul)&&!decanulContadasDash.has(chaveEventoDec)){
-          const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);
-          if(dd!==null&&dd>=0){item.diasTQTDecanul+=dd;item.qtdTQTDecanul++;decanulContadasDash.add(chaveEventoDec);}
-        }
+        // Conta cada procedimento uma vez por episódio e data; decanulação pareada à TQT mais recente anterior.
+        const tqts=(p._eventosTQT||[p.dataTQT]).map(d=>String(d||'').slice(0,10)).filter((d,i,a)=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&a.indexOf(d)===i);
+        const decans=(p._eventosDecan||[p.dataDecanul]).map(d=>String(d||'').slice(0,10)).filter((d,i,a)=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&a.indexOf(d)===i);
+        tqts.forEach(tqt=>{
+          const chaveEventoTQT=s+'|'+chaveEpisodioIndicador(p)+'|'+tqt;
+          if(dataDoEventoPertenceAoSetor(p,tqt)&&dataDentroPeriodo(tqt,dtInicio,dtFim)&&!tqtContadasDash.has(chaveEventoTQT)){
+            item.tqt++;tqtContadasDash.add(chaveEventoTQT);
+          }
+        });
+        decans.forEach(decan=>{
+          const chaveEventoDec=s+'|'+chaveEpisodioIndicador(p)+'|'+decan;
+          const tqtAnterior=tqts.filter(d=>d<=decan&&dataDoEventoPertenceAoSetor(p,d)).sort().pop()||'';
+          if(tqtAnterior&&dataDentroPeriodo(decan,dtInicio,dtFim)&&dataDoEventoPertenceAoSetor(p,decan)&&!decanulContadasDash.has(chaveEventoDec)){
+            const dd=diasEntreDatasIOTeTQT(tqtAnterior,decan);
+            if(dd!==null&&dd>=0){item.diasTQTDecanul+=dd;item.qtdTQTDecanul++;decanulContadasDash.add(chaveEventoDec);}
+          }
+        });
       });
 
       // Tempo IOT–TQT e total de TQT: considerar a data da TQT no período selecionado,
@@ -3112,21 +3127,22 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       consolidarPacientesPorSetor().forEach(p => {
         const s=normalizarSetorIndicador(p.setor); if(!stats[s])return;
         const chavePacienteSetor=s+'|'+chaveEpisodioIndicador(p);
-        if(tqtPertenceAoSetor(p)&&dataDentroPeriodo(p.dataTQT,dtInicio,dtFim)){
-          const chaveTQT=chavePacienteSetor+'|'+String(p.dataTQT).slice(0,10);
-          if(!tqtContadasDados.has(chaveTQT)){
+        const tqts=(p._eventosTQT||[p.dataTQT]).map(d=>String(d||'').slice(0,10)).filter((d,i,a)=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&a.indexOf(d)===i);
+        const decans=(p._eventosDecan||[p.dataDecanul]).map(d=>String(d||'').slice(0,10)).filter((d,i,a)=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&a.indexOf(d)===i);
+        tqts.forEach(tqt=>{
+          const chaveTQT=chavePacienteSetor+'|'+tqt;
+          if(dataDoEventoPertenceAoSetor(p,tqt)&&dataDentroPeriodo(tqt,dtInicio,dtFim)&&!tqtContadasDados.has(chaveTQT)){
             stats[s].tqt++;tqtContadasDados.add(chaveTQT);
-
           }
-        }
-        // Não exigir que a TQT também esteja no período: decanulação pode ocorrer meses depois.
-        if(p.dataTQT&&dataDentroPeriodo(p.dataDecanul,dtInicio,dtFim)&&dataDoEventoPertenceAoSetor(p,p.dataDecanul)){
-          const chaveDec=chavePacienteSetor+'|'+String(p.dataDecanul).slice(0,10);
-          if(!decanulContadasDados.has(chaveDec)){
-            const dd=diasEntreDatasIOTeTQT(p.dataTQT,p.dataDecanul);
+        });
+        decans.forEach(decan=>{
+          const chaveDec=chavePacienteSetor+'|'+decan;
+          const tqtAnterior=tqts.filter(d=>d<=decan&&dataDoEventoPertenceAoSetor(p,d)).sort().pop()||'';
+          if(tqtAnterior&&dataDentroPeriodo(decan,dtInicio,dtFim)&&dataDoEventoPertenceAoSetor(p,decan)&&!decanulContadasDados.has(chaveDec)){
+            const dd=diasEntreDatasIOTeTQT(tqtAnterior,decan);
             if(dd!==null&&dd>=0){stats[s].diasTQTDecanul+=dd;stats[s].qtdTQTDecanul++;decanulContadasDados.add(chaveDec);}
           }
-        }
+        });
       });
 
       const tbody = document.getElementById('tabelaDadosSetores');
