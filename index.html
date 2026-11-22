@@ -3166,7 +3166,6 @@ function obterResumoAVMSetor(setor,inicio,fim) {
           <tr>
             <td><strong>${set}</strong></td>
             <td>${item.registrosPeriodo || 0}</td>
-            <td>${item.pacientesAVM || 0}</td>
             <td>${item.diasAVM} d</td>
             <td><strong>${item.pacientesAVM>0?(item.diasAVM/item.pacientesAVM).toFixed(1)+' d':'—'}</strong></td>
             <td><strong style="color: var(--primary);">${txUtilizacao}</strong></td>
