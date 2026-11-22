@@ -573,7 +573,7 @@
         <div class="kpi-card"><div class="kpi-title">Tempo médio TQT–Decanulação</div><div class="kpi-num" id="dashTempoTQTDecanul">—</div><div class="kpi-desc" id="dashTempoTQTDecanulSub">Média no período</div></div>
         <div class="kpi-card"><div class="kpi-title">% Extubações não programadas notificadas</div><div class="kpi-num" id="dashPercNotificadas">—</div><div class="kpi-desc" id="dashPercNotificadasSub">Notificadas / não programadas</div></div>
         <div class="kpi-card">
-          <div class="kpi-title">Mortalidade em AVM</div>
+          <div class="kpi-title">Óbitos no período</div>
           <div class="kpi-num" id="dashTaxaObito">0.0%</div>
           <div class="kpi-desc" id="dashObitoSub">Óbitos no período</div>
         </div>
@@ -632,7 +632,7 @@
 
         <div class="chart-box">
           <div class="chart-box-title">
-            <span>6. Taxas de Traqueostomia (TQT) e Mortalidade</span>
+            <span>6. Traqueostomia (TQT) e Óbitos</span>
             <span class="tag">Incidência relativa (%)</span>
           </div>
           <div class="chart-container">
@@ -2560,7 +2560,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         item.extProg+=ev.programada;item.autoExt+=ev.auto;item.acidExt+=ev.acidental;
         item.naoProgNotificadas+=ev.notificadas;item.diasIOTExt+=ev.diasIOTExt;item.qtdIOTExt+=ev.qtdIOTExt;
         item.extAvaliaveis+=ev.avaliaveis;item.extSucesso+=ev.sucessos;
-        if(p.desfecho==='ÓBITO'&&contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
+        if(p.desfecho==='ÓBITO'&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
           const chave=s+'|'+chaveEpisodioIndicador(p);
           if(!obitosContadosDash.has(chave)){item.obitos++;obitosContadosDash.add(chave);}
         }
@@ -2680,8 +2680,8 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         ? `Média de ${totalPacientesIOTTQT} pacientes com datas válidas`
         : 'Sem pacientes com ambas as datas válidas';
 
-      document.getElementById('dashTaxaObito').textContent = `${globTxObito}%`;
-      document.getElementById('dashObitoSub').textContent = `${globObitos} desfechos ÓBITO pela data do desfecho`;
+      document.getElementById('dashTaxaObito').textContent = `${globObitos}`;
+      document.getElementById('dashObitoSub').textContent = 'Contagem de episódios com desfecho ÓBITO no período selecionado';
       document.getElementById('dashTempoIOTExt').textContent=globQtdIOTExt?(globDiasIOTExt/globQtdIOTExt).toFixed(1)+' d':'—';
       document.getElementById('dashTempoIOTExtSub').textContent=globQtdIOTExt?`Média de ${globQtdIOTExt} extubações`:'Sem extubações válidas no período';
       document.getElementById('dashTempoTQTDecanul').textContent=globQtdTQTDecanul?(globDiasTQTDecanul/globQtdTQTDecanul).toFixed(1)+' d':'—';
@@ -2877,16 +2877,13 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         }
       });
 
-      // 6. Taxas de TQT e Mortalidade (%)
+      // 6. Taxa de TQT e contagem de óbitos
       const ctxTQTObito = document.getElementById('graficoTQTObito').getContext('2d');
       const dadosTxTQT = setores.map(s => {
         const item = stats[s];
         return item.totalPacientes > 0 ? parseFloat(((item.tqt / item.totalPacientes) * 100).toFixed(1)) : 0;
       });
-      const dadosTxObito = setores.map(s => {
-        const item = stats[s];
-        return item.totalPacientes > 0 ? parseFloat(((item.obitos / item.totalPacientes) * 100).toFixed(1)) : 0;
-      });
+      const dadosTxObito = setores.map(s => stats[s].obitos || 0);
 
       if (chartInst.tqtObito) chartInst.tqtObito.destroy();
       chartInst.tqtObito = new Chart(ctxTQTObito, {
@@ -2895,7 +2892,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
           labels: setores,
           datasets: [
             { label: 'Taxa Traqueostomia (%)', data: dadosTxTQT, backgroundColor: '#8b5cf6', borderRadius: 4 },
-            { label: 'Mortalidade (%)', data: dadosTxObito, backgroundColor: '#f43f5e', borderRadius: 4 }
+            { label: 'Óbitos', data: dadosTxObito, backgroundColor: '#f43f5e', borderRadius: 4 }
           ]
         },
         options: {
@@ -3105,7 +3102,7 @@ function obterResumoAVMSetor(setor,inicio,fim) {
         stats[s].extAvaliaveis+=ev.avaliaveis;stats[s].extSucesso+=ev.sucessos;
         stats[s].autoextubacao+=ev.auto;stats[s].acidental+=ev.acidental;stats[s].naoProgNotificadas+=ev.notificadas;
         stats[s].diasIOTExt+=ev.diasIOTExt;stats[s].qtdIOTExt+=ev.qtdIOTExt;
-        if(p.desfecho==='ÓBITO'&&contarAVMDiasNoPeriodo(p,dtInicio,dtFim)>0&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
+        if(p.desfecho==='ÓBITO'&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim)){
           const chave=s+'|'+chaveEpisodioIndicador(p);
           if(!obitosContadosDados.has(chave)){stats[s].obitos++;obitosContadosDados.add(chave);}
         }
