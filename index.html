@@ -2555,8 +2555,10 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       const tqtContadasDash=new Set(), decanulContadasDash=new Set();
       pacientes.forEach(p=>{
         const setor=normalizarSetorIndicador(p.setor),item=statsPorSetor[setor];
-        if(item&&registroDentroDoPeriodoGeral(p,dtInicio,dtFim))item.totalRegistrosPeriodo++;
-        if(item&&p.desfecho==='ÓBITO'&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim))item.obitos++;
+        const noPeriodo=registroDentroDoPeriodoGeral(p,dtInicio,dtFim);
+        const desfecho=String(p.desfecho||'').trim().toUpperCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'');
+        if(item&&noPeriodo)item.totalRegistrosPeriodo++;
+        if(item&&noPeriodo&&desfecho==='OBITO')item.obitos++;
       });
       consolidarPacientesPorSetor().forEach(p => {
         const s=normalizarSetorIndicador(p.setor),item=statsPorSetor[s];
@@ -3109,7 +3111,8 @@ function obterResumoAVMSetor(setor,inicio,fim) {
       });
       pacientes.forEach(p=>{
         const s=normalizarSetorIndicador(p.setor);
-        if(stats[s]&&p.desfecho==='ÓBITO'&&dataDentroPeriodo(p.dataDesfecho,dtInicio,dtFim))stats[s].obitos++;
+        const desfecho=String(p.desfecho||'').trim().toUpperCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'');
+        if(stats[s]&&desfecho==='OBITO'&&registroDentroDoPeriodoGeral(p,dtInicio,dtFim))stats[s].obitos++;
       });
 
       const eventosIOTTQTSetores=obterEventosIOTTQTUnicos(pacientes,SETORES_ATIVOS,dtInicio,dtFim);
